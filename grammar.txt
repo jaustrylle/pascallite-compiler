@@ -1,1 +1,9 @@
-
+PROGRAM       ::= 'program' IDENTIFIER ';' CONSTS VARS BEGIN_END
+CONSTS        ::= 'const' CONST_STMTS | ε
+CONST_STMTS   ::= IDENTIFIER '=' LIT { ',' IDENTIFIER '=' LIT }
+VARS          ::= 'var' VAR_STMTS | ε
+VAR_STMTS     ::= IDENTIFIER ':' TYPE { ',' IDENTIFIER ':' TYPE }
+TYPE          ::= 'integer' | 'boolean'
+BEGIN_END     ::= 'begin' ... 'end'
+LIT           ::= INTEGER | BOOLEAN | 'not' IDENTIFIER
+BOOLEAN       ::= 'true' | 'false'
