@@ -8,6 +8,14 @@ Translates Pascallite into RAMM assembly; handles memory, boolean logic, arithme
 - Assemble and link: Use NASM or GAS to produce executables
 
 STAGE 0
+Stage 0 Compiler: parses and validates Pascallite program structure, constants, and variables
+
+Describe here:
+- ✅ What Stage 0 supports
+- 📦 How to build and run
+- 🧪 Sample input/output
+
+-----------------------------------------------------------
 🧭 Phase 1: Define the Language
 ✅ Step 1: Specify Pascallite Grammar
 - Write out the grammar in BNF or EBNF format.
@@ -68,4 +76,3 @@ STAGE 3
 - Add optimization passes (e.g., constant folding)
 - Support functions/procedures
 - Build a GUI or web interface for compiling
-
