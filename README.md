@@ -7,6 +7,7 @@ Translates Pascallite into RAMM assembly; handles memory, boolean logic, arithme
 - Generate assembly: Translate AST nodes into x86 instructions
 - Assemble and link: Use NASM or GAS to produce executables
 
+STAGE 0
 🧭 Phase 1: Define the Language
 ✅ Step 1: Specify Pascallite Grammar
 - Write out the grammar in BNF or EBNF format.
@@ -30,6 +31,7 @@ Translates Pascallite into RAMM assembly; handles memory, boolean logic, arithme
 - Validate syntax and build an Abstract Syntax Tree (AST).
 📁 Output: ast.json or in-memory tree
 
+STAGE 2
 🧠 Phase 4: Semantic Analysis
 ✅ Step 4: Build a Symbol Table
 - Track declared variables, types, and scopes.
@@ -52,6 +54,7 @@ Translates Pascallite into RAMM assembly; handles memory, boolean logic, arithme
 - I/O
 📁 Output: program.asm
 
+STAGE 3
 🧪 Phase 7: Testing and Debugging
 ✅ Step 7: Build a Test Suite
 - Write Pascallite programs that test:
