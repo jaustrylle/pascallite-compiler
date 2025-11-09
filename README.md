@@ -31,6 +31,10 @@ Stage 0 Compiler: parses and validates Pascallite program structure, constants a
 ...
 
 -----------------------------------------------------------
+
+STAGE 1
+For stages 1 and 2, the context-free grammar will change.
+
 🧭 Phase 1: Define the Language
 ✅ Step 1: Specify Pascallite Grammar
 - Write out the grammar in BNF or EBNF format.
