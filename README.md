@@ -3,11 +3,17 @@
 
 Stage 0 is the first stage of our Pascallite compiler and includes only the main routine and its interfaces with its major components. Stage 0, 1 and 2 are all organized as a translation grammar processor. The grammar it associates with is LL(1), so the processor generates a leftmost derivation of programs without backtracking. The grammar itself includes action symbols to build the symbol table, omitting the selection sets.
 
-- Define the grammar: Use BNF or EBNF for Pascallite
-- Write a parser: Recursive descent or use tools like Flex/Bison
-- Build an AST: Represent control flow, expressions, etc.
-- Generate assembly: Translate AST nodes into x86 instructions
-- Assemble and link: Use NASM or GAS to produce executables
+Our professor has already supplied:
+1. A complete LL1 grammar
+2. The translation actions
+
+These include:
+1. The productions (PROG, PROG_STMT, CONSTS, VARS, BEGIN_END_STMT, CONST_STMTS, VAR_STMTS, IDS, TYPE, LIT and BOOLEAN)
+2. The tokens and lexical rules - nextChar, nextToken behavior and character classes
+3. The action routines we call from the parser - insert, whichType, whichValue and code
+4. They symbol table layout
+5. The Compiler class interface (methods, members, emit, emitPrologue, emitEpilogue and emitStorage)
+6. Pseudocode for every parser routine and the lexical scanner
 
 STAGE 0
 Stage 0 Compiler: parses and validates Pascallite program structure, constants, and variables
