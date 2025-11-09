@@ -1,3 +1,10 @@
+/*
+main() -> Parser
+- Action calls inserted into the productions
+*/
+
+---------------------------------------------
+
 prog() - production 1
 
 void prog() //token should be "program"
