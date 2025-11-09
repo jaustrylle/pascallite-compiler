@@ -2,6 +2,8 @@
 stage0.cpp
 - Completes the implementation of Stage 0 for the CS4301 Pascallite compiler project
 - Follows the header and pseudocode supplied in our course's materials
+- Most of the processing is performed by the parser
+- Main is a simple program as a result
 */
 
 // REFER TO OVERALL COMPILER STRUCTURE - STAGE 0 FOR THIS PART
