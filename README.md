@@ -15,13 +15,20 @@ These include:
 5. The Compiler class interface (methods, members, emit, emitPrologue, emitEpilogue and emitStorage)
 6. Pseudocode for every parser routine and the lexical scanner
 
-STAGE 0
-Stage 0 Compiler: parses and validates Pascallite program structure, constants, and variables
+-----------------------------------------------------------
 
-Describe here:
-- ✅ What Stage 0 supports
-- 📦 How to build and run
-- 🧪 Sample input/output
+STAGE 0
+Stage 0 Compiler: parses and validates Pascallite program structure, constants and variables
+
+✅ What Stage 0 supports
+...
+
+📦 How to build and run
+- stage0.h - declares the parser methods
+- stage0.cpp - implements the parser functions, enforcing the grammar and calling translation actions
+
+🧪 Sample input/output
+...
 
 -----------------------------------------------------------
 🧭 Phase 1: Define the Language
