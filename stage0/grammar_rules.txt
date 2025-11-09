@@ -1,0 +1,165 @@
+prog() - production 1
+
+void prog() //token should be "program"
+{
+if (token != "program")
+processError(keyword "program" expected)
+progStmt()
+if (token == "const")
+consts()
+if (token == "var")
+vars()
+if (token != "begin")
+processError(keyword "begin" expected)
+beginEndStmt()
+if (token != END_OF_FILE)
+processError(no text may follow "end”)
+}
+
+------------------------------------------
+
+progStmt() - production 2
+
+void progStmt() //token should be "program"
+{
+string x
+if (token != "program")
+processError(keyword "program" expected)
+x = nextToken()
+if (token is not a NON_KEY_ID)
+processError(program name expected)
+if (nextToken() != ";")
+processError(semicolon expected)
+nextToken()
+code("program", x)
+insert(x,PROG_NAME,CONSTANT,x,NO,0)
+}
+
+----------------------------------------
+
+consts() - production 3
+
+void consts() //token should be "const"
+{
+if (token != "const")
+processError(keyword "const" expected)
+if (nextToken() is not a NON_KEY_ID)
+processError(non-keyword identifier must follow "const")
+constStmts()
+}
+
+-------------------------------------------------------------
+
+vars() - production 4
+
+void vars() //token should be "var"
+{
+if (token != "var")
+processError(keyword "var" expected)
+if (nextToken() is not a NON_KEY_ID)
+processError(non-keyword identifier must follow "var")
+varStmts()
+}
+
+------------------------------------------------------
+
+beginEndStmt() - production 5
+
+void beginEndStmt() //token should be "begin"
+{
+if (token != "begin")
+procesError(keyword "begin" expected)
+if (nextToken() != "end")
+processError(keyword "end" expected)
+if (nextToken() != ".")
+processError(period expected)
+nextToken()
+code("end", ".")
+}
+
+-----------------------------------------------
+
+constStmts() - production 6
+
+void constStmts() //token should be NON_KEY_ID
+{
+string x,y
+if (token is not a NON_KEY_ID)
+processError(non-keyword identifier expected)
+x = token
+if (nextToken() != "=")
+processError("=" expected)
+y = nextToken()
+if (y is not one of "+","-","not",NON_KEY_ID,"true","false",INTEGER)
+processError(token to right of "=" illegal)
+if (y is one of "+","-")
+{
+if (nextToken() is not an INTEGER)
+processError(integer expected after sign)
+y = y + token;
+}
+if (y == "not")
+{
+if (nextToken() is not a BOOLEAN)
+processError(boolean expected after "not")
+if (token == "true")
+y = "false"
+else
+y = "true"
+}
+if (nextToken() != ";")
+processError(semicolon expected)
+if (the data type of y is not INTEGER or BOOLEAN)
+processError(data type of token on the right-hand side must be INTEGER or
+BOOLEAN)
+insert(x,whichType(y),CONSTANT,whichValue(y),YES,1)
+x = nextToken()
+if (x is not one of "begin","var",NON_KEY_ID)
+processError(non-keyword identifier, "begin", or "var" expected)
+if (x is a NON_KEY_ID)
+constStmts()
+}
+
+----------------------------------------------
+
+varStmts() - production 7
+
+void varStmts() //token should be NON_KEY_ID
+{
+string x,y
+if (token is not a NON_KEY_ID)
+processError(non-keyword identifier expected)
+x = ids()
+if (token != ":")
+processError(":" expected)
+if (nextToken() is not one of "integer","boolean")
+processError(illegal type follows ":")
+y = token
+if (nextToken() != ";")
+processError(semicolon expected)
+insert(x,y,VARIABLE,"",YES,1)
+if (nextToken() is not one of "begin",NON_KEY_ID)
+processError(non-keyword identifier or "begin" expected)
+if (token is a NON_KEY_ID)
+varStmts()
+}
+
+--------------------------------------------------------
+
+ids() - production 8
+
+string ids() //token should be NON_KEY_ID
+{
+string temp,tempString
+if (token is not a NON_KEY_ID)
+processError(non-keyword identifier expected)
+tempString = token
+temp = token
+if (nextToken() == ",")
+{
+if (nextToken() is not a NON_KEY_ID)
+processError(non-keyword identifier expected)
+tempString = temp + "," + ids()
+}
+return tempString
+}
