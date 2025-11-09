@@ -1,5 +1,7 @@
-# PascalliteCompiler
-Translates Pascallite into RAMM assembly; handles memory, boolean logic, arithmetic and control flow
+# Pascallite Compiler
+## Angelo State University (CS4301) under Dr. Mark Motl
+
+Stage 0 is the first stage of our Pascallite compiler and includes only the main routine and its interfaces with its major components. Stage 0, 1 and 2 are all organized as a translation grammar processor. The grammar it associates with is LL(1), so the processor generates a leftmost derivation of programs without backtracking. The grammar itself includes action symbols to build the symbol table, omitting the selection sets.
 
 - Define the grammar: Use BNF or EBNF for Pascallite
 - Write a parser: Recursive descent or use tools like Flex/Bison
