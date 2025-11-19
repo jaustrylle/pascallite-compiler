@@ -12,7 +12,7 @@ stage0.cpp
 
 #include <iomanip>
 #include <cctype>
-#include <sstream> 
+#include <sstream>
 #include <cstdlib>      // for exit
 
 #include <set>
@@ -26,11 +26,11 @@ stage0.cpp
 // Missing private members in Compiler class
 static std::set<std::string> keywords;
 static std::set<char> specialSymbols;
-static uint I_count = 0; 
-static uint B_count = 0; 
+static uint I_count = 0;
+static uint B_count = 0;
 
 // String rep of END_OF_FILE char
-const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE); 
+const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE);
 
 // --- Global Helper Function Implementations ---
 std::string getTime() {
@@ -55,7 +55,7 @@ std::vector<std::string> splitNames(std::string names) {
 }
 
 // Global version for use in whichType/whichValue
-bool isBooleanLiteral(std::string s) { 
+bool isBooleanLiteral(std::string s) {
     return s == "true" || s == "false";
 }
 
@@ -93,7 +93,7 @@ Compiler::~Compiler(){  // destructor
 
 void Compiler::createListingHeader(){
     std::string timeStr = getTime();
-    
+
     // Listing header output to listingFile, not console
     listingFile << "STAGE0: Program Name Placeholder, " << timeStr << "\n";
     listingFile << std::left << std::setw(10) << "LINE NO:" << "SOURCE STATEMENT" << "\n";
@@ -102,7 +102,7 @@ void Compiler::createListingHeader(){
 
 void Compiler::parser(){
     nextChar(); // ch must be initialized to 1st char of source file
-    
+
     // Initial line number for listing file (lineNo starts at 0 or 1)
     if (listingFile.is_open()) {
         lineNo = 1; // Assuming lineNo is initialized to 0 in stage0.h
@@ -169,7 +169,7 @@ void Compiler::progStmt(){      // stage 0, prod 2
     }
 
     token = nextToken();        // advance to next tok
-    
+
     // **FIXED: Must use enums from stage0.h**
     insert(x, PROG_NAME, CONSTANT, x, NO, 0);
     code("program", x);
@@ -217,7 +217,8 @@ void Compiler::beginEndStmt(){  // stage 0, prod 5
 
 void Compiler::constStmts(){    // stage 0, prod 6
     std::string x, y;
-    storeTypes type; // Must be enum type
+    storeTypes type;
+    std::string val; // actual value to store
 
     if(!isNonKeyId(token)){
         processError("non-keyword identifier expected");
@@ -228,49 +229,57 @@ void Compiler::constStmts(){    // stage 0, prod 6
         processError("\"=\" expected");
     }
 
-    y = nextToken();
-    // overly complex, but maintain the core logic:
-    if(y != "+" && y != "-" && y != "not" && !isNonKeyId(y) && !isBoolean(y) && !isInteger(y)){
-        processError("token to right of \"=\" illegal");
-    }
+    y = nextToken(); // Token on the right of '='
 
-    std::string val = y; // actual value to store
-
+    // 1. Check for unary operator (+, -, not)
     if(y == "+" || y == "-"){
+        // Case 1: Signed Integer
         std::string sign = y;
         std::string next = nextToken();
         if(!isInteger(next)){
             processError("integer expected after sign");
         }
-        val = sign + next;
+        val = sign + next; // e.g., "-1"
         type = INTEGER;
-    } else if(y == "not"){
+    }
+    else if(y == "not"){
+        // Case 2: NOT Boolean
         std::string next = nextToken();
         if(!isBoolean(next)){
             processError("boolean expected after \"not\"");
         }
-        val = (next == "true") ? "false" : "true";
+        val = (next == "true") ? "false" : "true"; // Flip the value
         type = BOOLEAN;
-    } else {
-            // If it's a non-key-id, we need to look it up to get its type/value
-            // If it's a literal, whichType/whichValue will resolve it
-        type = whichType(y);
-        val = whichValue(y); // handles if y is a literal or a defined constant name
+    }
+    else {
+        // Case 3: Simple Literal (0, true) OR Non-Key-Id (big)
+        if(isInteger(y) || isBoolean(y)){
+            // Subcase 3a: Literal (e.g., "0", "true")
+            type = isInteger(y) ? INTEGER : BOOLEAN;
+            val = y;
+        } else if (isNonKeyId(y)) {
+            // Subcase 3b: Existing Constant Name (e.g., "big")
+            type = whichType(y);
+            val = whichValue(y);
+        } else {
+             processError("token to right of \"=\" illegal");
+        }
     }
 
-
+    // 4. Expect and process semicolon
     if(nextToken() != ";"){
         processError("semicolon expected");
     }
 
-    // mostly redundant due to type assignment
+    // 5. Final Type check
     if(type != INTEGER && type != BOOLEAN){
         processError("data type of token on the right-hand side must be INTEGER or BOOLEAN");
     }
 
-    // Must use enums from stage0.h
+    // 6. Insert into Symbol Table
     insert(x, type, CONSTANT, val, YES, 1);
 
+    // 7. Advance token and check for recursion or block end
     token = nextToken();
     if(token != "begin" && token != "var" && !isNonKeyId(token)){
         processError("non-keyword identifier, \"begin\", or \"var\" expected");
@@ -353,13 +362,6 @@ bool Compiler::isSpecialSymbol(char c) const{  // is c a spec symb?
     return specialSymbols.count(c);
 }
 
-bool Compiler::isNonKeyId(string s) const{      // is s a non_key_id?
-    if(s.empty() || !std::islower(static_cast<unsigned char>(s[0]))) return false;
-
-    for(char c : s){
-        if(!std::islower(static_cast<unsigned char>(c)) && !std::isdigit(static_cast<unsigned char>(c)) && c != '_') return false;
-        }
-
     return !isKeyword(s);
 }
 
@@ -403,7 +405,7 @@ void Compiler::insert(string externalName, storeTypes inType, modes inMode, stri
     }
 }
 
-storeTypes Compiler::whichType(string name){     // which data type does name have?
+toreTypes Compiler::whichType(string name){     // which data type does name have?
     // Use global helpers and SymbolTableEntry getter
     if(::isBooleanLiteral(name)){
         return BOOLEAN;
@@ -451,12 +453,12 @@ void Compiler::code(string op, string operand1, string operand2){
     ------------------------------------------------------ */
 
 void Compiler::emit(string label, string instruction, string operands, string comment){
-    objectFile << std::left << std::setw(8) << label << std::setw(9) << instruction      
-        << std::setw(24) << operands << comment << std::endl;  
+    objectFile << std::left << std::setw(8) << label << std::setw(9) << instruction
+        << std::setw(24) << operands << comment << std::endl;
 }
 
-void Compiler::emitPrologue(string progName, string){       
-    objectFile << "; Beginning of object file\n";       
+void Compiler::emitPrologue(string progName, string){
+    objectFile << "; Beginning of object file\n";
     objectFile << "%INCLUDE \"asm_io.inc\"\n";
     emit("SECTION", ".text");
     emit("global", "_start", "", std::string("program ") + progName);
@@ -474,18 +476,18 @@ void Compiler::emitStorage(){
     for(const auto& pair : symbolTable){
         const std::string& name = pair.first;
         const SymbolTableEntry& entry = pair.second;
-        
+
         if(entry.getAlloc() == YES && entry.getMode() == CONSTANT){
             std::string value = entry.getValue().empty() ? "0" : entry.getValue();
             emit(entry.getInternalName(), "dd", value, "; constant " + name);
         }
     }
 
-    emit("SECTION", ".bss");        
+    emit("SECTION", ".bss");
     for(const auto& pair : symbolTable){
         const std::string& name = pair.first;
         const SymbolTableEntry& entry = pair.second;
-        
+
         if(entry.getAlloc() == YES && entry.getMode() == VARIABLE){
             emit(entry.getInternalName(), "resd", std::to_string(entry.getUnits()), "; variable " + name);
         }
@@ -499,7 +501,7 @@ void Compiler::emitStorage(){
 char Compiler::nextChar(){       // returns next char or END_OF_FILE marker
     char next;
     if(!sourceFile.get(next)){
-        ch = END_OF_FILE;       
+        ch = END_OF_FILE;
     } else{
         ch = next;
         listingFile << ch;
