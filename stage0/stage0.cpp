@@ -643,7 +643,7 @@ string Compiler::genInternalName(storeTypes stype) const{
     }
 }
 
-void Compiler::processError(string err){        // output err to listingFile, call exit
+void Compiler::processError(string err){
     ++errorCount;
 
     std::cerr << "ERROR: " << err << " on line " << lineNo << std::endl;
@@ -653,6 +653,11 @@ void Compiler::processError(string err){        // output err to listingFile, ca
         listingFile << "Error: Line " << lineNo << ": " << err << "\n" << std::endl;
     }
 
+    // Flush object file so .asm contains header
+    if(objectFile.is_open()){
+        objectFile.flush();
+    }
+
     if(errorCount > 0){
         createListingTrailer();
         std::exit(EXIT_FAILURE);
@@ -660,6 +665,7 @@ void Compiler::processError(string err){        // output err to listingFile, ca
 }
 
 /////////////////////////////////////////////////////////////////////////////
+
 
 
 
