@@ -362,13 +362,14 @@ bool Compiler::isSpecialSymbol(char c) const{  // is c a spec symb?
     return specialSymbols.count(c);
 }
 
-bool Compiler::isKeyword(string s) const {
-    string t = toLower(s);
-    static const vector<string> kw = {
-        "program","const","var","begin","end","integer","boolean","not","true","false"
-    };
-    for (auto &k : kw) if (t == k) return true;
-    return false;
+bool Compiler::isNonKeyId(string s) const{      // is s a non_key_id?
+    if(s.empty() || !std::islower(static_cast<unsigned char>(s[0]))) return false;
+
+    for(char c : s){
+        if(!std::islower(static_cast<unsigned char>(c)) && !std::isdigit(static_cast<unsigned char>(c)) && c != '_') return false;
+        }
+
+    return !isKeyword(s);
 }
 
 bool Compiler::isInteger(string s) const { // is s an int?
