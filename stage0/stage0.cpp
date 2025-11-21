@@ -367,7 +367,13 @@ bool Compiler::isSpecialSymbol(char c) const{  // is c a spec symb?
     return specialSymbols.count(c);
 }
 
-    return !isKeyword(s);
+bool Compiler::isKeyword(string s) const {
+    string t = toLower(s);
+    static const vector<string> kw = {
+        "program","const","var","begin","end","integer","boolean","not","true","false"
+    };
+    for (auto &k : kw) if (t == k) return true;
+    return false;
 }
 
 bool Compiler::isInteger(string s) const { // is s an int?
@@ -410,7 +416,7 @@ void Compiler::insert(string externalName, storeTypes inType, modes inMode, stri
     }
 }
 
-toreTypes Compiler::whichType(string name){     // which data type does name have?
+storeTypes Compiler::whichType(string name){     // which data type does name have?
     // Use global helpers and SymbolTableEntry getter
     if(::isBooleanLiteral(name)){
         return BOOLEAN;
