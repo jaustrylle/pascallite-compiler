@@ -28,6 +28,7 @@ static std::set<std::string> keywords;
 static std::set<char> specialSymbols;
 static uint I_count = 0;
 static uint B_count = 0;
+static bool begChar = true;
 
 // String rep of END_OF_FILE char
 const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE);
@@ -94,10 +95,10 @@ Compiler::~Compiler(){  // destructor
 void Compiler::createListingHeader(){
     std::string timeStr = getTime();
 
-    // Listing header output to listingFile, not console
-    listingFile << "STAGE0: Program Name Placeholder, " << timeStr << "\n";
-    listingFile << std::left << std::setw(10) << "LINE NO:" << "SOURCE STATEMENT" << "\n";
-    // Initialize lineNo and print first line number (lineNo is set to 1 after constructor/in parser)
+    // Listing header output to listingFile, not console; SOURCE STATEMENT begins in line 23
+    listingFile << "STAGE0:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
+    listingFile << std::left << "LINE NO.\t" << std::setw(23) << "SOURCE STATEMENT" << "\n\n";
+            // Initialize lineNo and print first line number (lineNo is set to 1 after constructor/in parser)
 }
 
 void Compiler::parser(){
@@ -106,9 +107,7 @@ void Compiler::parser(){
     // Initial line number for listing file (lineNo starts at 0 or 1)
     if (listingFile.is_open()) {
         lineNo = 1; // Assuming lineNo is initialized to 0 in stage0.h
-        listingFile << std::setw(4) << lineNo << "  ";
     }
-
 
     if(nextToken() != "program"){
         processError("keyword \"program\" expected");
@@ -117,13 +116,19 @@ void Compiler::parser(){
     prog();     // parser implements grammar rules, calling 1st rule
 }
 
-void Compiler::createListingTrailer(){  // print compilation terminated + no. errs encountered
+void Compiler::createListingTrailer() {
+    std::string errorWord = (errorCount == 1) ? "ERROR" : "ERRORS";
+
     // Output to console
-    std::cout << "COMPILATION TERMINATED, " << errorCount << " ERRORS ENCOUNTERED" << std::endl;
+    std::cout << "COMPILATION TERMINATED\t\t"
+              << errorCount << " " << errorWord << " ENCOUNTERED"
+              << std::endl;
 
     // Output to listing file
-    if(listingFile.is_open()){
-        listingFile << "COMPILATION TERMINATED, " << errorCount << " ERRORS ENCOUNTERED" << std::endl;
+    if (listingFile.is_open()) {
+        listingFile << "COMPILATION TERMINATED\t\t"
+                    << errorCount << " " << errorWord << " ENCOUNTERED"
+                    << std::endl;
     }
 }
 
@@ -452,44 +457,74 @@ void Compiler::code(string op, string operand1, string operand2){
     Emit funcs
     ------------------------------------------------------ */
 
-void Compiler::emit(string label, string instruction, string operands, string comment){
-    objectFile << std::left << std::setw(8) << label << std::setw(9) << instruction
-        << std::setw(24) << operands << comment << std::endl;
+void Compiler::emit(string label, string instruction, string operands, string comment)
+{
+    objectFile << std::left                      // required
+               << std::setw(8)  << label        // label width 8
+               << std::setw(8)  << instruction  // instruction width 8
+               << std::setw(24) << operands     // operands width 24
+               << comment                        // comment directly after
+               << "\n";
 }
 
-void Compiler::emitPrologue(string progName, string){
-    objectFile << "; Beginning of object file\n";
-    objectFile << "%INCLUDE \"asm_io.inc\"\n";
+void Compiler::emitPrologue(string progName, string operand2)
+{
+    std::string timeStr = getTime();
+    objectFile << "; SERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n";
+
+    // Include directives
+    objectFile << "%INCLUDE \"Along32.inc\"\n";
+    objectFile << "%INCLUDE \"Macros_Along.inc\"\n";
+
+    objectFile << "\n"; // blank line
+
     emit("SECTION", ".text");
-    emit("global", "_start", "", std::string("program ") + progName);
+    emit("global", "_start", "", "; program " + progName);
+
+    objectFile << "\n"; // another blank line
+
     emit("_start:");
 }
 
-void Compiler::emitEpilogue(string, string){
-    emit("", "call", "Exit", "; terminate program");
+void Compiler::emitEpilogue(string operand1, string operand2){
+    emit("", "Exit", "{0}");
+    objectFile << "\n"; // next blank line
     emitStorage();
 }
 
 void Compiler::emitStorage(){
     emit("SECTION", ".data");
     // Iterate using const auto& pair : symbolTable
+
     for(const auto& pair : symbolTable){
         const std::string& name = pair.first;
         const SymbolTableEntry& entry = pair.second;
 
-        if(entry.getAlloc() == YES && entry.getMode() == CONSTANT){
-            std::string value = entry.getValue().empty() ? "0" : entry.getValue();
-            emit(entry.getInternalName(), "dd", value, "; constant " + name);
+        if (entry.getAlloc() == YES && entry.getMode() == CONSTANT){
+            std::string value = entry.getValue();
+
+            // Convert boolean constants
+            if (value == "false" || value == "FALSE")
+                value = "0";
+            else if (value == "true" || value == "TRUE")
+                value = "-1";
+            else if (value.empty())
+                value = "0";  // fallback
+
+            emit(entry.getInternalName(), "dd", value, "; " + name);
         }
     }
 
+    objectFile << "\n"; // blank line before next section
+
     emit("SECTION", ".bss");
+
     for(const auto& pair : symbolTable){
         const std::string& name = pair.first;
         const SymbolTableEntry& entry = pair.second;
 
         if(entry.getAlloc() == YES && entry.getMode() == VARIABLE){
-            emit(entry.getInternalName(), "resd", std::to_string(entry.getUnits()), "; variable " + name);
+            emit(entry.getInternalName(), "resd", std::to_string(entry.getUnits()), "; " + name);
         }
     }
 }
@@ -500,15 +535,34 @@ void Compiler::emitStorage(){
 
 char Compiler::nextChar(){       // returns next char or END_OF_FILE marker
     char next;
-    if(!sourceFile.get(next)){
-        ch = END_OF_FILE;
-    } else{
-        ch = next;
-        listingFile << ch;
 
-        if(ch == '\n') {
-            lineNo++;
-            listingFile << std::setw(4) << lineNo << "  "; // New line with number
+    // Try to read next char
+    if (!sourceFile.get(next)) {
+        ch = END_OF_FILE;
+        listingFile << "\n";
+        return ch;
+    }
+
+    ch = next;
+
+    // Print line number for the *first* line if nothing has printed yet
+    if (begChar) {
+        listingFile << std::right << std::setw(5) << lineNo << "|";
+        begChar = false;
+    }
+
+    // Print the character
+    listingFile << ch;
+
+    // If we hit a newline, set flag for next line
+    if (ch == '\n') {
+        int peeked = sourceFile.peek();
+        lineNo++;
+
+        if (peeked == EOF){
+            begChar = false;
+        } else{
+            begChar = true;
         }
     }
 
@@ -593,10 +647,14 @@ void Compiler::processError(string err){        // output err to listingFile, ca
     std::cerr << "ERROR: " << err << " on line " << lineNo << std::endl;
 
     if(listingFile.is_open()){
-        listingFile << " --> ERROR: " << err << std::endl;
+        listingFile << "\n";
+        listingFile << "Error: Line " << lineNo << ": " << err << "\n" << std::endl;
     }
 
-    std::exit(EXIT_FAILURE);
+    if(errorCount > 0){
+        createListingTrailer();
+        std::exit(EXIT_FAILURE);
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
