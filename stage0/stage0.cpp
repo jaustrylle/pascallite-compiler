@@ -72,6 +72,7 @@ bool isIntegerLiteral(std::string s) {
 }
 
 /////////////////////////////////////////////////////////////////////////////
+
 /* ------------------------------------------------------
     Compiler class declared in stage0.h, now define its funcs
     ------------------------------------------------------ */
@@ -156,9 +157,8 @@ void Compiler::prog(){  // stage0, prod 1
 void Compiler::progStmt(){      // stage 0, prod 2
     std::string x;
 
-    // token is already "program"
-
     x = nextToken();    // get program name
+
     if(!isNonKeyId(x)){
         processError("program name expected");
     }
@@ -169,8 +169,6 @@ void Compiler::progStmt(){      // stage 0, prod 2
     }
 
     token = nextToken();        // advance to next tok
-
-    // **FIXED: Must use enums from stage0.h**
     insert(x, PROG_NAME, CONSTANT, x, NO, 0);
     code("program", x);
 }
@@ -665,12 +663,6 @@ void Compiler::processError(string err){
 }
 
 /////////////////////////////////////////////////////////////////////////////
-
-
-
-
-
-
 
 
 
