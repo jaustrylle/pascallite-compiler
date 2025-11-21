@@ -98,16 +98,11 @@ void Compiler::createListingHeader(){
     // Listing header output to listingFile, not console; SOURCE STATEMENT begins in line 23
     listingFile << "STAGE0:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
     listingFile << std::left << "LINE NO.\t" << std::setw(23) << "SOURCE STATEMENT" << "\n\n";
-            // Initialize lineNo and print first line number (lineNo is set to 1 after constructor/in parser)
+    lineNo = 1;
 }
 
 void Compiler::parser(){
     nextChar(); // ch must be initialized to 1st char of source file
-
-    // Initial line number for listing file (lineNo starts at 0 or 1)
-    if (listingFile.is_open()) {
-        lineNo = 1; // Assuming lineNo is initialized to 0 in stage0.h
-    }
 
     if(nextToken() != "program"){
         processError("keyword \"program\" expected");
