@@ -399,7 +399,7 @@ void Compiler::insert(string externalName, storeTypes inType, modes inMode, stri
 
     for(const std::string& name : names){
         if(symbolTable.count(name)){
-            processError("multiple name definition: " + name);
+            processError("symbol " + name + " is multiply defined);
         } else if (isKeyword(name)) {
             processError("illegal use of keyword: " + name);
         } else {
