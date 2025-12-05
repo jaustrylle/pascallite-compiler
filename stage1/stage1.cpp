@@ -137,7 +137,7 @@ void Compiler::createListingHeader(){
 
     // Listing header output to listingFile, not console
     listingFile << "STAGE0:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
-    listingFile << std::left << std::setw(8) << "LINE" << std::setw(3) << " " << std::setw(23) << "SOURCE STATEMENT" << "\n";
+    listingFile << std::left << std::setw(8) << "LINE NO." << std::setw(3) << " " << std::setw(23) << "SOURCE STATEMENT" << "\n";
     listingFile << std::string(60, '-') << "\n";
     lineNo = 1;
 }
