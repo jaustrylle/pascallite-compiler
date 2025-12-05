@@ -136,9 +136,13 @@ void Compiler::createListingHeader(){
     std::string timeStr = getTime();
 
     // Listing header output to listingFile, not console
-    listingFile << "STAGE0:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
-    listingFile << std::left << std::setw(8) << "LINE NO." << std::setw(3) << " " << std::setw(23) << "SOURCE STATEMENT" << "\n";
-    listingFile << std::string(60, '-') << "\n";
+    listingFile << "STAGE1:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
+
+    listingFile << std::left << "LINE NO."
+                << std::setw(23 - std::string("LINE NO.").length()) << " "
+                << "SOURCE STATEMENT\n";
+
+    listingFile << "\n";
     lineNo = 1;
 }
 
