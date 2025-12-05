@@ -2081,9 +2081,6 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
     pushOperand(dest);
 }
 
-
-
-
 /* ------------------------------------------------------
     Lexical routines
     ------------------------------------------------------ */
@@ -2114,73 +2111,128 @@ char Compiler::nextChar(){       // returns next char or END_OF_FILE marker
         int peeked = sourceFile.peek();
         lineNo++;
 
-        if (peeked == EOF){
+        if (peeked == EOF) {
             begChar = false;
-        } else{
+        } else {
             begChar = true;
         }
     }
 
     return ch;
 }
+
 string Compiler::nextToken(){   // returns next tok or END_OF_FILE marker
-    token = "";
+    token.clear();
 
-    while(token.empty()){
-        switch(ch){
-            case '{':   // skip comment
-                while(nextChar() != '}' && std::string(1, ch) != END_FILE_TOKEN){}
-                if(std::string(1, ch) == END_FILE_TOKEN){
-                    processError("unexpected end of file in comment");
-                } else{
-                    nextChar();         // skip closing '}'
-                }
-                break;
+    // Skip whitespace/comments until we produce a token or hit EOF
+    while (true) {
+        // If we've reached EOF character, return EOF token
+        if (ch == END_OF_FILE) {
+            return END_FILE_TOKEN;
+        }
 
-            case '}':
-                processError("/'}' cannot begin token");
-                break;
+        // Skip whitespace
+        if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') {
+            ch = nextChar();
+            continue;
+        }
 
-            case ' ':
-            case '\t':
-            case '\n':
-            case '\r':
-                nextChar();     // skip whitespace
-                break;
-            default:
-                if(isSpecialSymbol(ch)){
-                    token += ch;
-                    nextChar();
-                } else if(std::islower(static_cast<unsigned char>(ch))){
-                    token += ch;
-                    while(std::isalnum(static_cast<unsigned char>(nextChar())) || ch == '_'){
-                        token += ch;
-                    }
-                    if(std::string(1, ch) == END_FILE_TOKEN){
-                         // If EOF, token is complete, don't error here, let parser handle it
-                    }
-                } else if(std::isdigit(static_cast<unsigned char>(ch))){
-                    token += ch;
-                    while(std::isdigit(static_cast<unsigned char>(nextChar()))){
-                        token += ch;
-                    }
-                    if(std::string(1, ch) == END_FILE_TOKEN){
-                        // EOF, let parser handle
-                    }
-                } else if(std::string(1, ch) == END_FILE_TOKEN){
-                    token = END_OF_FILE;
-                } else{         // default
-                    processError("illegal symbol /'" + std::string(1, ch) + "\'");
-                }
-                break;
+        // Skip comments { ... }
+        if (ch == '{') {
+            // consume '{'
+            ch = nextChar();
+            while (ch != END_OF_FILE && ch != '}') {
+                ch = nextChar();
+            }
+            if (ch == END_OF_FILE) {
+                processError("unexpected end of file in comment");
+                return END_FILE_TOKEN;
+            }
+            // consume closing '}'
+            ch = nextChar();
+            continue;
+        }
+
+        // Illegal '}' at token start
+        if (ch == '}') {
+            processError("'}' cannot begin token");
+            ch = nextChar();
+            continue;
+        }
+
+        // Special symbols (handle two-character tokens)
+        if (isSpecialSymbol(ch)) {
+            char first = ch;
+            char saved = ch;
+            ch = nextChar(); // advance to possibly form two-char token
+
+            // Two-char combinations
+            if (first == ':' && ch == '=') {
+                token = ":=";
+                ch = nextChar();
+                return token;
+            }
+            if (first == '<' && ch == '=') {
+                token = "<=";
+                ch = nextChar();
+                return token;
+            }
+            if (first == '>' && ch == '=') {
+                token = ">=";
+                ch = nextChar();
+                return token;
+            }
+            if (first == '!' && ch == '=') {
+                token = "!=";
+                ch = nextChar();
+                return token;
+            }
+
+            // Otherwise single-character special symbol
+            token = std::string(1, saved);
+            return token;
+        }
+
+        // Identifier or keyword: starts with lowercase letter
+        if (std::islower(static_cast<unsigned char>(ch))) {
+            token.push_back(ch);
+            ch = nextChar();
+            while (ch != END_OF_FILE && (std::isalnum(static_cast<unsigned char>(ch)) || ch == '_')) {
+                token.push_back(ch);
+                ch = nextChar();
+            }
+            // normalize to lowercase already ensured by checks
+            return token;
+        }
+
+        // Number literal (integer)
+        if (std::isdigit(static_cast<unsigned char>(ch)) || ((ch == '+' || ch == '-') && std::isdigit(static_cast<unsigned char>(sourceFile.peek())))) {
+            // handle optional leading sign followed by digits
+            if (ch == '+' || ch == '-') {
+                token.push_back(ch);
+                ch = nextChar();
+            }
+            while (ch != END_OF_FILE && std::isdigit(static_cast<unsigned char>(ch))) {
+                token.push_back(ch);
+                ch = nextChar();
+            }
+            return token;
+        }
+
+        // EOF check (redundant but safe)
+        if (ch == END_OF_FILE) {
+            return END_FILE_TOKEN;
+        }
+
+        // Anything else is illegal
+        {
+            std::string bad(1, ch);
+            processError("illegal symbol '" + bad + "'");
+            ch = nextChar();
+            // continue scanning for next valid token
         }
     }
-
-    return token;
 }
-
-
-
 
 
 
