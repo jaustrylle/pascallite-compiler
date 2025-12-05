@@ -449,51 +449,345 @@ string Compiler::ids(){         // stage 0, prod 8
 //////////////////// EXPANDED IN STAGE 1
 
 void Compiler::execStmts(){     // stage 1, prod 2
-...
+    // Parse zero or more executable statements until 'end' or EOF or '.'
+    while (true) {
+        // Stop if we reached end of block
+        if (token == "end" || (token.size() == 1 && token[0] == END_OF_FILE) || token == ".") break;
+
+        // Parse a single statement
+        execStmt();
+
+        // Statements in Pascal are typically separated by semicolons.
+        if (token == ";") {
+            token = nextToken(); // consume semicolon and continue
+            continue;
+        }
+
+        // If next token begins another statement, continue; otherwise break
+        if (token == "end" || token == "." || (token.size() == 1 && token[0] == END_OF_FILE)) break;
+
+        // If token looks like start of another statement, continue loop
+        if (isNonKeyId(token) || token == "read" || token == "write") {
+            continue;
+        }
+
+        // Unexpected token: try to recover by advancing
+        processError("unexpected token in statement list");
+        token = nextToken();
+    }
 }
 
 void Compiler::execStmt(){      // stage 1, prod 3
-...
+    // Decide which kind of statement based on current token
+    if (isNonKeyId(token)) {
+        assignStmt();
+    }
+    else if (token == "read") {
+        readStmt();
+    }
+    else if (token == "write") {
+        writeStmt();
+    }
+    else {
+        processError("executable statement expected");
+        // Attempt to skip token and continue
+        token = nextToken();
+    }
 }
 
 void Compiler::assignStmt(){    // stage 1, prod 4
-...
+    // Syntax: <id> := <expression>
+    std::string lhs = token;
+    if (!isNonKeyId(lhs)) {
+        processError("assignment target must be an identifier");
+        token = nextToken();
+        return;
+    }
+
+    token = nextToken(); // consume identifier, advance to ':='
+    if (token != ":=") {
+        processError("':=' expected in assignment");
+        // attempt to continue
+    } else {
+        token = nextToken(); // consume ':=' and advance to expression
+    }
+
+    // Parse RHS expression; express() will push result onto operand stack
+    express();
+
+    // After express, top of operand stack holds result
+    std::string rhs = popOperand();
+    if (rhs.empty()) {
+        processError("missing expression in assignment");
+        return;
+    }
+
+    // Emit assignment: lhs := rhs
+    // If rhs is a temporary, we can store it directly into lhs
+    // If rhs is a literal or variable, emitAssignCode will handle it
+    emitAssignCode(rhs, lhs);
+
+    // If rhs was a temporary, free it now (value moved to lhs)
+    if (isTemporary(rhs)) freeTemp();
+
+    // token is left at the token after the expression (express() leaves it there)
 }
 
 void Compiler::readStmt(){      // stage 1, prod 5
-...
+    // Syntax: read ( id {, id} )
+    token = nextToken(); // consume 'read' and advance to '(' or identifier
+
+    if (token != "(") {
+        processError("'(' expected after read");
+        // attempt to continue
+    } else {
+        token = nextToken(); // consume '('
+    }
+
+    // Read one or more identifiers separated by commas
+    while (true) {
+        if (!isNonKeyId(token)) {
+            processError("identifier expected in read");
+            // try to recover
+            token = nextToken();
+            if (token == ")") break;
+        } else {
+            // Emit read code for this identifier
+            emitReadCode(token);
+            token = nextToken(); // consume identifier
+        }
+
+        if (token == ",") {
+            token = nextToken(); // consume comma and continue
+            continue;
+        }
+        break;
+    }
+
+    if (token != ")") {
+        processError("')' expected after read list");
+    } else {
+        token = nextToken(); // consume ')'
+    }
 }
 
 void Compiler::writeStmt(){     // stage 1, prod 7
-...
+    // Syntax: write ( <expression> {, <expression>} )
+    token = nextToken(); // consume 'write' and advance to '('
+
+    if (token != "(") {
+        processError("'(' expected after write");
+        // attempt to continue
+    } else {
+        token = nextToken(); // consume '('
+    }
+
+    // One or more expressions separated by commas
+    while (true) {
+        // Parse expression and emit write for its result
+        express();
+        std::string val = popOperand();
+        if (val.empty()) {
+            processError("missing expression in write");
+        } else {
+            emitWriteCode(val);
+            if (isTemporary(val)) freeTemp();
+        }
+
+        // token is at next token after expression
+        if (token == ",") {
+            token = nextToken(); // consume comma and continue
+            continue;
+        }
+        break;
+    }
+
+    if (token != ")") {
+        processError("')' expected after write list");
+    } else {
+        token = nextToken(); // consume ')'
+    }
 }
 
 void Compiler::express(){       // stage 1, prod 9
-...
+    // express -> term expresses
+    term();
+    expresses();
+    // After reduction, top of operand stack holds the expression result
 }
 
 void Compiler::expresses(){     // stage 1, prod 10
-...
+    // handles additive and logical-or operators: +, -, or
+    while (token == "+" || token == "-" || token == "or" || token == "||") {
+        std::string op = token;
+        token = nextToken(); // consume operator
+        term();              // parse right-hand term
+
+        // Pop operands: right then left
+        std::string right = popOperand();
+        std::string left  = popOperand();
+
+        if (left.empty() || right.empty()) {
+            processError("operand missing for binary operator");
+            // push back what we have and return
+            if (!left.empty()) pushOperand(left);
+            if (!right.empty()) pushOperand(right);
+            return;
+        }
+
+        // Create destination temporary and compute dest = left op right
+        std::string dest = getTemp();
+        // Copy left into dest
+        emitAssignCode(left, dest);
+
+        // Apply operator using dest as left operand
+        if (op == "+") {
+            emitAdditionCode(right, dest);
+        } else if (op == "-") {
+            emitSubtractionCode(right, dest);
+        } else if (op == "or" || op == "||") {
+            emitOrCode(right, dest);
+        } else {
+            processError("unknown additive/logical operator: " + op);
+        }
+
+        // Free temporaries used for left/right if they were temps
+        if (isTemporary(left)) freeTemp();
+        if (isTemporary(right)) freeTemp();
+
+        // Push result temp
+        pushOperand(dest);
+    }
 }
 
 void Compiler::term(){          // stage 1, prod 11
-...
+    // term -> factor terms
+    factor();
+    terms();
 }
 
 void Compiler::terms(){         // stage 1, prod 12
-...
+    // handles multiplicative and logical-and operators: *, /, %, and
+    while (token == "*" || token == "/" || token == "%" || token == "and" || token == "&&") {
+        std::string op = token;
+        token = nextToken(); // consume operator
+        factor();            // parse right-hand factor
+
+        // Pop operands: right then left
+        std::string right = popOperand();
+        std::string left  = popOperand();
+
+        if (left.empty() || right.empty()) {
+            processError("operand missing for multiplicative operator");
+            if (!left.empty()) pushOperand(left);
+            if (!right.empty()) pushOperand(right);
+            return;
+        }
+
+        // Create destination temporary and compute dest = left op right
+        std::string dest = getTemp();
+        // Copy left into dest
+        emitAssignCode(left, dest);
+
+        // Apply operator using dest as left operand
+        if (op == "*") {
+            emitMultiplicationCode(right, dest);
+        } else if (op == "/") {
+            emitDivisionCode(right, dest);
+        } else if (op == "%") {
+            emitModuloCode(right, dest);
+        } else if (op == "and" || op == "&&") {
+            emitAndCode(right, dest);
+        } else {
+            processError("unknown multiplicative/logical operator: " + op);
+        }
+
+        // Free temporaries used for left/right if they were temps
+        if (isTemporary(left)) freeTemp();
+        if (isTemporary(right)) freeTemp();
+
+        // Push result temp
+        pushOperand(dest);
+    }
 }
 
 void Compiler::factor(){        // stage 1, prod 13
-...
+    // factor -> [ unary-op ] part
+    if (token == "+" || token == "-" || token == "not") {
+        std::string unary = token;
+        token = nextToken(); // consume unary operator
+        part();              // parse the operand
+        std::string opnd = popOperand();
+        if (opnd.empty()) {
+            processError("operand expected after unary operator");
+            return;
+        }
+
+        // Create destination temp and apply unary op
+        std::string dest = getTemp();
+        // Copy operand into dest
+        emitAssignCode(opnd, dest);
+
+        if (unary == "-") {
+            emitNegationCode(dest);
+        } else if (unary == "+") {
+            // unary plus is a no-op (value already in dest)
+        } else if (unary == "not") {
+            emitNotCode(dest);
+        } else {
+            processError("unknown unary operator: " + unary);
+        }
+
+        if (isTemporary(opnd)) freeTemp();
+        pushOperand(dest);
+    } else {
+        // No unary operator; just parse part
+        part();
+    }
+
+    // After factor, allow further factor-level processing if grammar requires
+    factors();
 }
 
 void Compiler::factors(){       // stage 1, prod 14
-...
+    // This implementation does not define additional postfix operators,
+    // so factors is a no-op placeholder to match grammar shape.
+    // If you later add exponentiation or other postfix operators, implement here.
+    (void)0;
 }
 
 void Compiler::part(){          // stage 1, prod 15
-...
+    // part -> identifier | literal | ( express )
+    if (token == "(") {
+        token = nextToken(); // consume '('
+        express();
+        if (token != ")") {
+            processError("')' expected");
+        } else {
+            token = nextToken(); // consume ')'
+        }
+        return;
+    }
+
+    // Identifier
+    if (isNonKeyId(token)) {
+        // Push the identifier name as operand (external name used in emit)
+        pushOperand(token);
+        token = nextToken(); // consume identifier
+        return;
+    }
+
+    // Literal (integer or boolean)
+    if (isLiteral(token) || isInteger(token) || isBoolean(token)) {
+        // Push literal token directly; emit routines will accept literals
+        pushOperand(token);
+        token = nextToken(); // consume literal
+        return;
+    }
+
+    // Unexpected token
+    processError("literal, identifier, or '(' expected");
+    token = nextToken(); // try to recover
 }
 
 /* ------------------------------------------------------
