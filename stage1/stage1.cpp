@@ -856,14 +856,23 @@ void Compiler::insert(string externalName, storeTypes inType, modes inMode, stri
     std::vector<std::string> names = splitNames(externalName);
 
     for(const std::string& name : names){
+        if (name.empty()) {
+            processError("empty identifier in insert()");
+            continue;
+        }
         if(symbolTable.count(name)){
-            processError("symbol " + name + " is multiply defined);
+            processError("symbol " + name + " is multiply defined");
         } else if (isKeyword(name)) {
             processError("illegal use of keyword: " + name);
         } else {
-            std::string internalName = (std::isupper(static_cast<unsigned char>(name[0])) ? name : genInternalName(inType));
-            // Use the SymbolTableEntry constructor
-            symbolTable.insert({name, SymbolTableEntry(internalName, inType, inMode, inValue, inAlloc, inUnits)});
+            std::string internalName;
+            if (!name.empty() && std::isupper(static_cast<unsigned char>(name[0]))) {
+                internalName = name;
+            } else {
+                internalName = genInternalName(inType);
+            }
+            // Use the SymbolTableEntry constructor and insert into map
+            symbolTable.emplace(name, SymbolTableEntry(internalName, inType, inMode, inValue, inAlloc, inUnits));
         }
     }
 }
@@ -878,7 +887,7 @@ storeTypes Compiler::whichType(string name){     // which data type does name ha
         return symbolTable.at(name).getDataType();
     } else{     // name ident, const too hopefully
         processError("reference to undefined constant: " + name);
-        return INTEGER;         // unreachable, avoids compiler warn
+        return INTEGER;         // fallback to avoid compiler warning
     }
 }
 
@@ -897,9 +906,57 @@ string Compiler::whichValue(string name){        // which value does name have?
         }
     } else{
         processError("reference to undefined constant: " + name);
-        return "";      // unreachable, avoids compiler warn
+        return "";      // fallback
     }
 }
+//////////////////// EXPANDED IN STAGE 1
+
+void Compiler::code(string op, string operand1, string operand2){       // generates the code
+    if(op == "program"){
+        emitPrologue(operand1);
+    } else if(op == "end"){
+        emitEpilogue();
+    } else if(op == "read"){
+        emitReadCode(operand1);
+    } else if(op == "write"){
+        emitWriteCode(operand1);
+    } else if(op == "+"){       // binary +
+        emitAdditionCode(operand1, operand2);
+    } else if(op == "-"){       // binary -
+        emitSubtractionCode(operand1, operand2);
+    } else if(op == "neg"){     // unary -
+        emitNegationCode(operand1, operand2);
+    } else if(op == "not"){
+        emitNotCode(operand1, operand2);
+    } else if(op == "*"){
+        emitMultiplicationCode(operand1, operand2);
+    } else if(op == "div" || op == "/"){
+        emitDivisionCode(operand1, operand2);
+    } else if(op == "mod" || op == "%"){
+        emitModuloCode(operand1, operand2);
+    } else if(op == "and" || op == "&&"){
+        emitAndCode(operand1, operand2);
+    } else if(op == "or" || op == "||"){
+        emitOrCode(operand1, operand2);
+    } else if(op == "=="){
+        emitEqualityCode(operand1, operand2);
+    } else if(op == "!="){
+        emitInequalityCode(operand1, operand2);
+    } else if(op == "<"){
+        emitLessThanCode(operand1, operand2);
+    } else if(op == "<="){
+        emitLessThanOrEqualToCode(operand1, operand2);
+    } else if(op == ">"){
+        emitGreaterThanCode(operand1, operand2);
+    } else if(op == ">="){
+        emitGreaterThanOrEqualToCode(operand1, operand2);
+    } else if(op == ":="){
+        emitAssignCode(operand1, operand2);
+    } else {
+        processError("compiler error: illegal arguments to code(): " + op);
+    }
+}
+
 //////////////////// EXPANDED IN STAGE 1
 
 void Compiler::code(string op, string operand1, string operand2){       // generates the code
