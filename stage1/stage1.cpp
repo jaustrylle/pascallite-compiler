@@ -1221,62 +1221,382 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
     // Note: operand2 should never be a temporary (assignment target must be a variable)
 }
 
-void Compiler::emitAdditionCode(string operand1, string operand2){      // op2+op1
-    // if type either operand is not int, processError(illegal type)
-    // if A reg. holds temp not operand1 or operand2 then emit code store that temp mem
-    // change alloc entry for temp in symb table to yes, deassign it
-    // if A reg holds non-temp not operand1 or operand2, deassign
-    // if neither operand in A reg., emit code perform reg.-mem add
-    // deassign all temp in add and free names
-    // A reg. next avail. temp name change type symb table entry int, push name of result onto operandStk
+// Arithmetic / logical emit implementations
+
+void Compiler::emitAdditionCode(string operand1, string operand2){      // op2 + op1
+    // operand2 is the destination (already contains left operand)
+    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+        processError("illegal type in addition (integers required)");
+        return;
+    }
+
+    // Ensure both operands exist in symbol table (literals may be inserted earlier)
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol (destination): " + operand2);
+        return;
+    }
+
+    // If A register currently holds a temporary that is neither operand1 nor operand2,
+    // spill it to memory and mark it allocated.
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            // store eax into that symbol's internal name
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            // mark it allocated
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    // Load destination (operand2) into eax if it's not already in A
+    if (contentsOfAReg != operand2) {
+        const auto &destEntry = symbolTable.at(operand2);
+        emit("", "MOV", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    // Add operand1 to eax (use immediate if literal integer)
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "ADD", "eax, " + srcEntry.getValue(), "; eax += " + srcEntry.getValue());
+    } else {
+        emit("", "ADD", "eax, " + srcEntry.getInternalName(), "; eax += " + operand1);
+    }
+
+    // Store result back to destination memory
+    const auto &destEntry = symbolTable.at(operand2);
+    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+
+    // Update A register tracking: now A corresponds to operand2
+    contentsOfAReg = operand2;
+
+    // Free any temporary used as source (operand1) if it was a temp
+    if (isTemporary(operand1)) freeTemp();
+    // operand2 is the result temp and must not be freed here
 }
 
-void Compiler::emitSubtractionCode(string operand1, string operand2){   //op2-op1
-...
+void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 - op1
+    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+        processError("illegal type in subtraction (integers required)");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol (destination): " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        const auto &destEntry = symbolTable.at(operand2);
+        emit("", "MOV", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "SUB", "eax, " + srcEntry.getValue(), "; eax -= " + srcEntry.getValue());
+    } else {
+        emit("", "SUB", "eax, " + srcEntry.getInternalName(), "; eax -= " + operand1);
+    }
+
+    const auto &destEntry = symbolTable.at(operand2);
+    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    contentsOfAReg = operand2;
+
+    if (isTemporary(operand1)) freeTemp();
 }
 
-void Compiler::emitMultiplicationCode(string operand1, string operand2){        //op2*op1
-...
+void Compiler::emitMultiplicationCode(string operand1, string operand2){        // op2 * op1
+    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+        processError("illegal type in multiplication (integers required)");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol (destination): " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        const auto &destEntry = symbolTable.at(operand2);
+        emit("", "MOV", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "IMUL", "eax, " + srcEntry.getValue(), "; eax *= " + srcEntry.getValue());
+    } else {
+        emit("", "IMUL", "eax, " + srcEntry.getInternalName(), "; eax *= " + operand1);
+    }
+
+    const auto &destEntry = symbolTable.at(operand2);
+    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    contentsOfAReg = operand2;
+
+    if (isTemporary(operand1)) freeTemp();
 }
 
-void Compiler::emitDivisionCode(string operand1, string operand2){      //op2/op1
-    // if type either operand not int, processError(illegal type)
-    // if A reg. holds temp not op2 then emit code store temp to mem
-    // change alloc entry for symb tab to yes, deassign
-    // if A reg non-gemp not operand2 deassign
-    // if op2 not in A reg., emit innst do reg.-mem load op2 into A
-    // emit code exte sign div from A reg to edx:eax, emit code reg-mem div
-    // deassign all temp invov free
-    // A reg next avail temp name, change type symb tab to int, push name on operandStk
+void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 / op1
+    // op2 is dividend (left), operand1 is divisor (right)
+    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+        processError("illegal type in division (integers required)");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol (dividend): " + operand2);
+        return;
+    }
+
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    // Load dividend (operand2) into eax if not already there
+    if (contentsOfAReg != operand2) {
+        const auto &dividendEntry = symbolTable.at(operand2);
+        emit("", "MOV", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    // Sign-extend eax into edx:eax
+    emit("", "CDQ", "", "; sign-extend eax into edx:eax");
+
+    // Perform idiv by divisor (operand1)
+    const auto &divisorEntry = symbolTable.at(operand1);
+    if (divisorEntry.getMode() == CONSTANT && isInteger(divisorEntry.getValue())) {
+        // For immediate divisor, move immediate into a temp register or memory is required.
+        // Simpler: move immediate into a temp memory location (ensure it exists)
+        string immName = operand1;
+        if (isInteger(immName) && !symbolTable.count(immName)) {
+            insert(immName, INTEGER, CONSTANT, immName, YES, 1);
+        }
+        emit("", "IDIV", divisorEntry.getInternalName(), "; idiv by " + operand1);
+    } else {
+        emit("", "IDIV", divisorEntry.getInternalName(), "; idiv by " + operand1);
+    }
+
+    // After IDIV, quotient in eax. Store quotient into destination (operand2's internal name)
+    const auto &destEntry = symbolTable.at(operand2);
+    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store quotient into " + operand2);
+
+    // Update A register tracking
+    contentsOfAReg = operand2;
+
+    // Free temporary divisor if it was a temp
+    if (isTemporary(operand1)) freeTemp();
 }
 
-void Compiler::emitModuloCode(string operand1, string operand2){        //op2%op1
-...
+void Compiler::emitModuloCode(string operand1, string operand2){        // op2 % op1
+    // op2 is dividend, operand1 is divisor; result should be remainder
+    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+        processError("illegal type in modulo (integers required)");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol (dividend): " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        const auto &dividendEntry = symbolTable.at(operand2);
+        emit("", "MOV", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    emit("", "CDQ", "", "; sign-extend eax into edx:eax for idiv");
+
+    const auto &divisorEntry = symbolTable.at(operand1);
+    emit("", "IDIV", divisorEntry.getInternalName(), "; idiv by " + operand1);
+
+    // Remainder is in edx; store edx into destination
+    const auto &destEntry = symbolTable.at(operand2);
+    emit("", "MOV", destEntry.getInternalName() + ", edx", "; store remainder into " + operand2);
+
+    // A register no longer corresponds to destination (eax holds quotient)
+    contentsOfAReg.clear();
+
+    if (isTemporary(operand1)) freeTemp();
 }
 
-void Compiler::emitNegationCode(string operand1, string operand2){      //-op1
-...
+void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -op1 (operand1 is destination temp)
+    // operand1 is expected to be the destination (temp) that already contains the operand value
+    if (!symbolTable.count(operand1)) {
+        processError("reference to undefined symbol in negation: " + operand1);
+        return;
+    }
+    if (whichType(operand1) != INTEGER) {
+        processError("illegal type in negation (integer required)");
+        return;
+    }
+
+    // Ensure value is in eax
+    if (contentsOfAReg != operand1) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for negation");
+    }
+
+    emit("", "NEG", "eax", "; negate eax");
+
+    // Store back
+    emit("", "MOV", symbolTable.at(operand1).getInternalName() + ", eax", "; store negated value into " + operand1);
+
+    contentsOfAReg = operand1;
 }
 
-void Compiler::emitNotCode(string operand1, string operand2){           //!op1
-...
+void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !op1 (operand1 is destination temp)
+    if (!symbolTable.count(operand1)) {
+        processError("reference to undefined symbol in not: " + operand1);
+        return;
+    }
+    if (whichType(operand1) != BOOLEAN) {
+        processError("illegal type in not (boolean required)");
+        return;
+    }
+
+    // Ensure value is in eax
+    if (contentsOfAReg != operand1) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for not");
+    }
+
+    // Bitwise NOT will flip -1 <-> 0 for boolean representation used earlier
+    emit("", "NOT", "eax", "; bitwise not eax");
+
+    // Store back
+    emit("", "MOV", symbolTable.at(operand1).getInternalName() + ", eax", "; store not result into " + operand1);
+
+    contentsOfAReg = operand1;
 }
 
-void Compiler::emitAndCode(string operand1, string operand2){           //op2&&op1
-if type of either operand is not boolean
-processError(illegal type)
-if the A Register holds a temp not operand1 nor operand2 then
-emit code to store that temp into memory
-change the allocate entry for the temp in the symbol table to yes
-deassign it
-if the A register holds a non-temp not operand1 nor operand2 then deassign it
-if neither operand is in the A register then
-emit code to load operand2 into the A register
-emit code to perform register-memory and
-deassign all temporaries involved in the and operation and free those names for reuse
-A Register = next available temporary name and change type of its symbol table entry to boolean
-push the name of the result onto operandStk
+void Compiler::emitAndCode(string operand1, string operand2){           // op2 && op1
+    // operand2 is destination (left), operand1 is right operand
+    if (whichType(operand1) != BOOLEAN || whichType(operand2) != BOOLEAN) {
+        processError("illegal type in and (booleans required)");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol (destination): " + operand2);
+        return;
+    }
+
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    // Load destination (operand2) into eax if not already there
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    // AND with operand1
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "AND", "eax, " + srcEntry.getValue(), "; eax &= " + srcEntry.getValue());
+    } else {
+        emit("", "AND", "eax, " + srcEntry.getInternalName(), "; eax &= " + operand1);
+    }
+
+    // Store result back to destination
+    emit("", "MOV", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
+
+    // Update A register tracking
+    contentsOfAReg = operand2;
+
+    // Free temporary source if needed
+    if (isTemporary(operand1)) freeTemp();
 }
+
+
+
+
+
+
+
 
 void Compiler::emitOrCode(string operand1, string operand2){            //op2||op1
 ...
