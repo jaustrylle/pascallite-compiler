@@ -794,7 +794,7 @@ void Compiler::part(){          // stage 1, prod 15
     Helper funcs for Pascallite lexicon
     ------------------------------------------------------ */
 
-bool Compiler::isKeyword(const string &s) const {       // is s a keyword?
+bool Compiler::isKeyword(string s) const {       // is s a keyword?
     return keywords.count(s) > 0;
 }
 
@@ -802,7 +802,7 @@ bool Compiler::isSpecialSymbol(char c) const {  // is c a spec symb?
     return specialSymbols.count(c) > 0;
 }
 
-bool Compiler::isNonKeyId(const string &s) const {      // is s a non_key_id?
+bool Compiler::isNonKeyId(string s) const {      // is s a non_key_id?
     if (s.empty()) return false;
     // first character must be lowercase letter
     if (!std::islower(static_cast<unsigned char>(s[0]))) return false;
@@ -820,7 +820,7 @@ bool Compiler::isNonKeyId(const string &s) const {      // is s a non_key_id?
     return !isKeyword(s);
 }
 
-bool Compiler::isInteger(const string &s) const { // is s an int?
+bool Compiler::isInteger(string s) const { // is s an int?
     if (s.empty()) return false;
 
     size_t i = 0;
@@ -840,11 +840,11 @@ bool Compiler::isInteger(const string &s) const { // is s an int?
     return hasDigit;
 }
 
-bool Compiler::isBoolean(const string &s) const {      // is s a bool?
+bool Compiler::isBoolean(string s) const {      // is s a bool?
     return s == "true" || s == "false";
 }
 
-bool Compiler::isLiteral(const string &s) const {      // is s a lit?
+bool Compiler::isLiteral(string s) const {      // is s a lit?
     return isInteger(s) || isBoolean(s);
 }
 
