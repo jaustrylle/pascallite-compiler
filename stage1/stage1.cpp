@@ -794,40 +794,57 @@ void Compiler::part(){          // stage 1, prod 15
     Helper funcs for Pascallite lexicon
     ------------------------------------------------------ */
 
-bool Compiler::isKeyword(string s) const{       // is s a keyword?
-    return keywords.count(s);
+bool Compiler::isKeyword(const string &s) const {       // is s a keyword?
+    return keywords.count(s) > 0;
 }
 
-bool Compiler::isSpecialSymbol(char c) const{  // is c a spec symb?
-    return specialSymbols.count(c);
+bool Compiler::isSpecialSymbol(char c) const {  // is c a spec symb?
+    return specialSymbols.count(c) > 0;
 }
 
-bool Compiler::isNonKeyId(string s) const{      // is s a non_key_id?
-    if(s.empty() || !std::islower(static_cast<unsigned char>(s[0]))) return false;
+bool Compiler::isNonKeyId(const string &s) const {      // is s a non_key_id?
+    if (s.empty()) return false;
+    // first character must be lowercase letter
+    if (!std::islower(static_cast<unsigned char>(s[0]))) return false;
 
-    for(char c : s){
-        if(!std::islower(static_cast<unsigned char>(c)) && !std::isdigit(static_cast<unsigned char>(c)) && c != '_') return false;
+    // remaining characters may be lowercase letters, digits, or underscore
+    for (char ch : s) {
+        if (!(std::islower(static_cast<unsigned char>(ch)) ||
+              std::isdigit(static_cast<unsigned char>(ch)) ||
+              ch == '_')) {
+            return false;
         }
+    }
 
+    // must not be a keyword
     return !isKeyword(s);
 }
 
-bool Compiler::isInteger(string s) const { // is s an int?
-    if(s.empty()) return false;
-    size_t i = (s[0] == '+' || s[0] == '-') ? 1 : 0;
+bool Compiler::isInteger(const string &s) const { // is s an int?
+    if (s.empty()) return false;
 
-    for(; i < s.size(); ++i){
-        if(!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    size_t i = 0;
+    // optional leading sign
+    if (s[0] == '+' || s[0] == '-') {
+        i = 1;
+        // lone '+' or '-' is not an integer
+        if (s.size() == 1) return false;
     }
 
-    // there must be at least one digit
-    return ( (s[0] == '+' || s[0] == '-') ? s.size() > 1 : s.size() > 0 );
+    bool hasDigit = false;
+    for (; i < s.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+        hasDigit = true;
+    }
+
+    return hasDigit;
 }
 
-bool Compiler::isBoolean(string s) const{      // is s a bool?
+bool Compiler::isBoolean(const string &s) const {      // is s a bool?
     return s == "true" || s == "false";
 }
-bool Compiler::isLiteral(string s) const{      // is s a lit?
+
+bool Compiler::isLiteral(const string &s) const {      // is s a lit?
     return isInteger(s) || isBoolean(s);
 }
 
