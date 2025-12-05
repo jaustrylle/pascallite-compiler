@@ -1075,49 +1075,150 @@ void Compiler::emitStorage(){
 
 //////////////////// EXPANDED DURING STAGE 1
 
-void Compiler::emitReadCode(string operand, string operand2){
-    string name
-while (name is broken from list (operand) and put in name != "")
-{
-if name is not in symbol table
-processError(reference to undefined symbol)
-if data type of name is not INTEGER
-processError(can't read variables of this type)
-if storage mode of name is not VARIABLE
-processError(attempting to read to a read-only location)
-emit code to call the Irvine ReadInt function
-emit code to store the contents of the A register at name
-set the contentsOfAReg = name
-}
-void Compiler::emitWriteCode(string operand, string operand2){
-string name
-static bool definedStorage = false
-while (name is broken from list (operand) and put in name != "")
-{
-if name is not in symbol table
-processError(reference to undefined symbol)
-if name is not in the A register
-emit the code to load name in the A register
-set the contentsOfAReg = name
-if data type of name is INTEGER or BOOLEAN
-emit code to call the Irvine WriteInt function
-emit code to call the Irvine Crlf function
-} // end while
+void Compiler::emitReadCode(string operand, string /*operand2*/){
+    // Expect operand to be a single identifier (readStmt already handles lists)
+    std::string name = operand;
+
+    if (name.empty()) {
+        processError("internal error: empty operand to emitReadCode");
+        return;
+    }
+
+    // Must be defined
+    if (!symbolTable.count(name)) {
+        processError("reference to undefined symbol: " + name);
+        return;
+    }
+
+    const SymbolTableEntry &entry = symbolTable.at(name);
+
+    // Only INTEGER variables may be read
+    if (entry.getDataType() != INTEGER) {
+        processError("can't read variables of this type: " + name);
+        return;
+    }
+
+    // Must be a variable (not a constant)
+    if (entry.getMode() != VARIABLE) {
+        processError("attempting to read to a read-only location: " + name);
+        return;
+    }
+
+    // Call the runtime ReadInt routine (assumes it returns value in eax)
+    emit("", "CALL", "ReadInt", "; read into eax");
+
+    // Store eax into the variable's storage (use internal name)
+    emit("", "MOV", entry.getInternalName() + ", eax", "; store read value into " + name);
+
+    // Track that A register (eax) no longer holds a useful named value;
+    // but per the spec we set contentsOfAReg to the variable that now contains the value
+    contentsOfAReg = name;
 }
 
-void Compiler::emitAssignCode(string operand1, string operand2){        // op2=op1
-if types of operands are not the same
-processError(incompatible types)
-if storage mode of operand2 is not VARIABLE
-processError(symbol on left-hand side of assignment must have a storage mode of VARIABLE)
-if operand1 = operand2 return
-if operand1 is not in the A register then
-emit code to load operand1 into the A register
-emit code to store the contents of that register into the memory location pointed to by
-operand2
-set the contentsOfAReg = operand2
-if operand1 is a temp then free its name for reuse
-//operand2 can never be a temporary since it is to the left of ':='
+void Compiler::emitWriteCode(string operand, string /*operand2*/){
+    // Expect operand to be a single operand (identifier, literal, or temp)
+    std::string name = operand;
+
+    if (name.empty()) {
+        processError("internal error: empty operand to emitWriteCode");
+        return;
+    }
+
+    // If it's a literal that was pushed earlier, it should exist in symbol table.
+    if (!symbolTable.count(name)) {
+        // If it's a literal, insert it so we can reference its internal name
+        if (isLiteral(name) || isInteger(name) || isBoolean(name)) {
+            insert(name, whichType(name), CONSTANT, name, YES, 1);
+        } else {
+            processError("reference to undefined symbol: " + name);
+            return;
+        }
+    }
+
+    const SymbolTableEntry &entry = symbolTable.at(name);
+
+    // Ensure the value is in A (eax). If not, load it.
+    if (contentsOfAReg != name) {
+        // Load the value into eax from the symbol's internal storage
+        emit("", "MOV", "eax, " + entry.getInternalName(), "; load " + name + " into eax");
+        contentsOfAReg = name;
+    }
+
+    // For INTEGER or BOOLEAN, call WriteInt (assumes value in eax)
+    if (entry.getDataType() == INTEGER || entry.getDataType() == BOOLEAN) {
+        emit("", "CALL", "WriteInt", "; write eax");
+        // Print newline / CRLF
+        emit("", "CALL", "Crlf", "; newline");
+    } else {
+        processError("cannot write value of this type: " + name);
+    }
+}
+
+void Compiler::emitAssignCode(string operand1, string operand2){        // op2 = op1
+    if (operand1.empty() || operand2.empty()) {
+        processError("internal error: empty operand in emitAssignCode");
+        return;
+    }
+
+    // operand2 must be a defined symbol (target)
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol on left-hand side: " + operand2);
+        return;
+    }
+
+    const SymbolTableEntry &destEntry = symbolTable.at(operand2);
+
+    // Left-hand side must be a VARIABLE
+    if (destEntry.getMode() != VARIABLE) {
+        processError("symbol on left-hand side of assignment must have a storage mode of VARIABLE: " + operand2);
+        return;
+    }
+
+    // Determine types for compatibility
+    storeTypes t1 = whichType(operand1);
+    storeTypes t2 = destEntry.getDataType();
+    if (t1 != t2) {
+        processError("incompatible types in assignment: " + operand1 + " to " + operand2);
+        return;
+    }
+
+    // If source and destination are identical, nothing to do
+    if (operand1 == operand2) return;
+
+    // Ensure operand1 exists in symbol table (literals should have been inserted earlier)
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1)) {
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        } else {
+            processError("reference to undefined symbol on right-hand side: " + operand1);
+            return;
+        }
+    }
+
+    const SymbolTableEntry &srcEntry = symbolTable.at(operand1);
+
+    // If operand1 is not currently in A (eax), load it
+    if (contentsOfAReg != operand1) {
+        // If operand1 is a literal constant, load immediate into eax
+        if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+            // Use immediate move for integer literal
+            emit("", "MOV", "eax, " + srcEntry.getValue(), "; load immediate literal " + srcEntry.getValue());
+        } else {
+            // Load from memory (internal name)
+            emit("", "MOV", "eax, " + srcEntry.getInternalName(), "; load " + operand1 + " into eax");
+        }
+    }
+
+    // Store eax into destination memory
+    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store eax into " + operand2);
+
+    // Update contentsOfAReg to reflect that eax now corresponds to the destination
+    contentsOfAReg = operand2;
+
+    // If operand1 was a temporary, free it now (its value moved)
+    if (isTemporary(operand1)) freeTemp();
+
+    // Note: operand2 should never be a temporary (assignment target must be a variable)
 }
 
 void Compiler::emitAdditionCode(string operand1, string operand2){      // op2+op1
