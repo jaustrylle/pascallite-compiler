@@ -20,6 +20,7 @@ stage1.cpp
 #include <vector>
 #include <chrono>       // for time
 #include <ctime>
+#include <algorithm>    // for std::find_if, std::remove_if, std::isspace
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -34,7 +35,9 @@ static bool begChar = true;
 // String rep of END_OF_FILE char
 const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE);
 
+/////////////////////////////////////////////////////////////////////////////
 // --- Global Helper Function Implementations ---
+
 std::string getTime() {
     auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     char buf[64];
@@ -44,13 +47,22 @@ std::string getTime() {
     }
     return std::string();
 }
+
+static inline std::string trim(const std::string &s) {
+    auto front = std::find_if_not(s.begin(), s.end(), [](unsigned char c){ return std::isspace(c); });
+    auto back = std::find_if_not(s.rbegin(), s.rend(), [](unsigned char c){ return std::isspace(c); }).base();
+    if (front >= back) return std::string();
+    return std::string(front, back);
+}
+
 std::vector<std::string> splitNames(std::string names) {
     std::vector<std::string> result;
     std::stringstream ss(names);
     std::string item;
     while (std::getline(ss, item, ',')) {
-        // Trim whitespace if necessary (optional)
-        result.push_back(item);
+        // Trim whitespace
+        std::string t = trim(item);
+        if (!t.empty()) result.push_back(t);
     }
     return result;
 }
@@ -62,13 +74,18 @@ bool isBooleanLiteral(std::string s) {
 
 // Global version for use in whichType/whichValue
 bool isIntegerLiteral(std::string s) {
-    if(s.empty()) return false;
-    size_t i = (s[0] == '+' || s[0] == '-') ? 1 : 0;
-    for(; i < s.size(); ++i){
-        if(!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    if (s.empty()) return false;
+    size_t i = 0;
+    if (s[0] == '+' || s[0] == '-') {
+        i = 1;
+        if (s.size() == 1) return false; // only sign, no digits
     }
-        // Ensures at least one digit is present (e.g., prevents '+' or '-' alone)
-    return (s.size() > i);
+    bool hasDigit = false;
+    for (; i < s.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+        hasDigit = true;
+    }
+    return hasDigit;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -78,13 +95,35 @@ bool isIntegerLiteral(std::string s) {
     ------------------------------------------------------ */
 
 Compiler::Compiler(char **argv){        // constructor
+    // Initialize runtime state before opening files
+    token = "";
+    ch = ' ';
+    errorCount = 0;
+    lineNo = 1;
+    currentTempNo = -1;
+    maxTempNo = -1;
+    contentsOfAReg = "";
+
+    // Open files (argv indices assumed valid by main)
     sourceFile.open(argv[1]);
     listingFile.open(argv[2]);
     objectFile.open(argv[3]);
 
     // Initialize static global sets
-    keywords = {"program", "const", "var", "begin", "end", "integer", "boolean", "true", "false", "not"};
-    specialSymbols = {':', ',', ';', '=', '+', '-', '.', '(', ')', '{', '}'};
+    keywords = {"program", "const", "var", "begin", "end", "integer", "boolean", "true", "false", "not", "read", "write"};
+    // single-character special symbols; lexer must still handle multi-char tokens like ":=" or "<="
+    specialSymbols = {':', ',', ';', '=', '+', '-', '.', '(', ')', '{', '}', '*', '/', '%', '<', '>'};
+
+    // Check file openings and report errors
+    if (!sourceFile.is_open()) {
+        processError(std::string("Unable to open source file: ") + argv[1]);
+    }
+    if (!listingFile.is_open()) {
+        processError(std::string("Unable to open listing file: ") + argv[2]);
+    }
+    if (!objectFile.is_open()) {
+        processError(std::string("Unable to open object file: ") + argv[3]);
+    }
 }
 
 Compiler::~Compiler(){  // destructor
@@ -96,17 +135,21 @@ Compiler::~Compiler(){  // destructor
 void Compiler::createListingHeader(){
     std::string timeStr = getTime();
 
-    // Listing header output to listingFile, not console; SOURCE STATEMENT begins in line 23
+    // Listing header output to listingFile, not console
     listingFile << "STAGE0:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
-    listingFile << std::left << "LINE NO.\t" << std::setw(23) << "SOURCE STATEMENT" << "\n\n";
+    listingFile << std::left << std::setw(8) << "LINE" << std::setw(3) << " " << std::setw(23) << "SOURCE STATEMENT" << "\n";
+    listingFile << std::string(60, '-') << "\n";
     lineNo = 1;
 }
 
 void Compiler::parser(){
-    nextChar(); // ch must be initialized to 1st char of source file
+    // Ensure ch is initialized to first character of source file
+    ch = nextChar(); // nextChar is expected to be implemented elsewhere
+    token = nextToken(); // prime the first token
 
-    if(nextToken() != "program"){
+    if(token != "program"){
         processError("keyword \"program\" expected");
+        // attempt to continue parsing anyway
     }
 
     prog();     // parser implements grammar rules, calling 1st rule
@@ -122,7 +165,7 @@ void Compiler::createListingTrailer() {
 
     // Output to listing file
     if (listingFile.is_open()) {
-        listingFile << "COMPILATION TERMINATED\t\t"
+        listingFile << "\n" << "COMPILATION TERMINATED\t\t"
                     << errorCount << " " << errorWord << " ENCOUNTERED"
                     << std::endl;
     }
