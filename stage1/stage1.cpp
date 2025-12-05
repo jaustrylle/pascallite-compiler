@@ -909,6 +909,7 @@ string Compiler::whichValue(string name){        // which value does name have?
         return "";      // fallback
     }
 }
+
 //////////////////// EXPANDED IN STAGE 1
 
 void Compiler::code(string op, string operand1, string operand2){       // generates the code
@@ -957,67 +958,43 @@ void Compiler::code(string op, string operand1, string operand2){       // gener
     }
 }
 
-//////////////////// EXPANDED IN STAGE 1
+// Stack helpers and emit functions
 
-void Compiler::code(string op, string operand1, string operand2){       // generates the code
-    if(op == "program"){
-        emitPrologue(operand1);
-    } else if(op == "end"){
-        emitEpilogue();
-    } else if(op == "read"){
-        emit readCode();
-    } else if(op == "write"){
-        emit writeCode();
-    } else if(op == "+"){       // must be binary +
-        emit additionCode();
-    } else if(op == "-"){       // must be binary -
-        emit subtractionCode();
-    } else if(op == "neg"){     // must be unary -
-        emit negationCode();
-    } else if(op == "not"){
-        emit notCode();
-    } else if(op == "*"){
-        emit multiplicationCode();
-    } else if(op == "div"){
-        emit divisionCode();
-    } else if(op == "mod"){
-        emit moduloCode();
-    } else if(op == "and"){
-        emit andCode();
-    // ...
-    } else if(op == "="){
-        emit equalityCode();
-    } else if(op == ":="){
-        emit assignmentCode();
-    } else{
-        processError("compiler error: illegal arguments to code()");
+void Compiler::pushOperator(string name){         // push name onto operatorStk
+    operatorStk.push(name);
+}
+
+string Compiler::popOperator(){   // pop name from operatorStk
+    if (operatorStk.empty()) {
+        processError("compiler error: operator stack underflow");
+        return string();
     }
+    string top = operatorStk.top();
+    operatorStk.pop();
+    return top;
 }
 
-//////////////////// EXPANDED IN STAGE 1
-
-void pushOperator(string name){         // push name onto operatorStk
-    // push name onto stack;
+void Compiler::pushOperand(string name){          // push name onto operandStk
+    // If name is a literal and not already in the symbol table, create an entry
+    if (isLiteral(name) || isInteger(name) || isBoolean(name)) {
+        if (symbolTable.count(name) == 0) {
+            // Determine literal type
+            storeTypes t = whichType(name);
+            // Insert literal as a constant with allocation so it can be emitted in storage
+            insert(name, t, CONSTANT, name, YES, 1);
+        }
+    }
+    operandStk.push(name);
 }
 
-string popOperator(){   // pop name from operatorStk
-    // if op stack != empty
-    // return top element removed from Stck
-    // else
-    // processError (compiler error; operator stack underflow)
-}
-
-void pushOperand(string name){          // push name onto operandStk
-    // if name is lit, also create symbol table entry for it
-    // if name = lit & no symb table entry
-        // insert symb table entry, call whichType to find data type of lit
-    // push name onto stack
-}
-string popOperand(){    // pop name from operandStk
-    // if operandStk != empty
-    // return top element removed from stack
-    // else
-    // processError(compiler error; operand stack underflow)
+string Compiler::popOperand(){    // pop name from operandStk
+    if (operandStk.empty()) {
+        processError("compiler error: operand stack underflow");
+        return string();
+    }
+    string top = operandStk.top();
+    operandStk.pop();
+    return top;
 }
 
 /* ------------------------------------------------------
@@ -1095,6 +1072,7 @@ void Compiler::emitStorage(){
         }
     }
 }
+
 //////////////////// EXPANDED DURING STAGE 1
 
 void Compiler::emitReadCode(string operand, string operand2){
