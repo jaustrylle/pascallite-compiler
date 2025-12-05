@@ -1591,60 +1591,498 @@ void Compiler::emitAndCode(string operand1, string operand2){           // op2 &
     if (isTemporary(operand1)) freeTemp();
 }
 
+// Comparison and logical-or emit implementations
 
+void Compiler::emitOrCode(string operand1, string operand2){            // op2 || op1
+    // operand2 is destination (left), operand1 is right
+    if (whichType(operand1) != BOOLEAN || whichType(operand2) != BOOLEAN) {
+        processError("illegal type in or (booleans required)");
+        return;
+    }
 
+    // Ensure operands exist in symbol table (literals may be inserted)
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol (destination): " + operand2);
+        return;
+    }
 
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
 
+    // Load destination (operand2) into eax if not already there
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
 
+    // OR with operand1
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "OR", "eax, " + srcEntry.getValue(), "; eax |= " + srcEntry.getValue());
+    } else {
+        emit("", "OR", "eax, " + srcEntry.getInternalName(), "; eax |= " + operand1);
+    }
 
+    // Store result back to destination
+    emit("", "MOV", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
 
-void Compiler::emitOrCode(string operand1, string operand2){            //op2||op1
-...
+    // Update A register tracking
+    contentsOfAReg = operand2;
+
+    // Free temporary source if needed
+    if (isTemporary(operand1)) freeTemp();
 }
 
-void Compiler::emitEqualityCode(string operand1, string operand2){      //op2==op1
-    if types of operands are not the same
-processError(incompatible types)
-if the A Register holds a temp not operand1 nor operand2 then
-emit code to store that temp into memory
-change the allocate entry for it in the symbol table to yes
-deassign it
-if the A register holds a non-temp not operand2 nor operand1 then deassign it
-if neither operand is in the A register then
-emit code to load operand2 into the A register
-emit code to perform a register-memory compare
-emit code to jump if equal to the next available Ln (call getLabel)
-emit code to load FALSE into the A register
-insert FALSE in symbol table with value 0 and external name false
-emit code to perform an unconditional jump to the next label (call getLabel should be L(n+1))
-emit code to label the next instruction with the first acquired label Ln
-emit code to load TRUE into A register
-insert TRUE in symbol table with value -1 and external name true
-emit code to label the next instruction with the second acquired label L(n+1)
-deassign all temporaries involved and free those names for reuse
-A Register = next available temporary name and change type of its symbol table entry to boolean
-push the name of the result onto operandStk
+void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 == op1
+    // Types must match
+    storeTypes t1 = whichType(operand1);
+    storeTypes t2 = whichType(operand2);
+    if (t1 != t2) {
+        processError("incompatible types in equality comparison");
+        return;
+    }
+
+    // Ensure operands exist (insert literals if needed)
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, t1, CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol: " + operand2);
+        return;
+    }
+
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    // Load operand2 into eax if not already there
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    // Compare eax with operand1
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+    } else {
+        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+    }
+
+    // Prepare labels
+    string Ltrue = getLabel();
+    string Lend  = getLabel();
+
+    // Jump if equal to Ltrue
+    emit("", "JE", Ltrue, "; jump if equal");
+
+    // Load FALSE into eax (0). Ensure 'false' constant exists
+    if (!symbolTable.count("false")) {
+        insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
+    }
+    // Use immediate 0 for speed
+    emit("", "MOV", "eax, 0", "; load FALSE");
+    // Jump to end
+    emit("", "JMP", Lend, "; jump to end");
+
+    // Label Ltrue: load TRUE into eax (-1)
+    emit(Ltrue + ":");
+    if (!symbolTable.count("true")) {
+        insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
+    }
+    emit("", "MOV", "eax, -1", "; load TRUE");
+
+    // Label Lend:
+    emit(Lend + ":");
+
+    // Create destination temporary to hold boolean result
+    string dest = getTemp();
+    // Ensure dest is boolean
+    symbolTable[dest].setDataType(BOOLEAN);
+
+    // Store eax into dest internal name
+    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+
+    // Deassign/free temporaries used as operands
+    if (isTemporary(operand1)) freeTemp();
+    if (isTemporary(operand2)) freeTemp();
+
+    // A register now corresponds to dest
+    contentsOfAReg = dest;
+
+    // Push result onto operand stack
+    pushOperand(dest);
 }
 
-void Compiler::emitInequalityCode(string operand1, string operand2){    //op2!=op1
-...
+void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 != op1
+    // Reuse equality pattern but invert jump
+    storeTypes t1 = whichType(operand1);
+    storeTypes t2 = whichType(operand2);
+    if (t1 != t2) {
+        processError("incompatible types in inequality comparison");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, t1, CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol: " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+    } else {
+        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+    }
+
+    string Ltrue = getLabel();
+    string Lend  = getLabel();
+
+    // Jump if not equal to Ltrue
+    emit("", "JNE", Ltrue, "; jump if not equal");
+
+    // Load FALSE into eax
+    if (!symbolTable.count("false")) {
+        insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
+    }
+    emit("", "MOV", "eax, 0", "; load FALSE");
+    emit("", "JMP", Lend, "; jump to end");
+
+    emit(Ltrue + ":");
+    if (!symbolTable.count("true")) {
+        insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
+    }
+    emit("", "MOV", "eax, -1", "; load TRUE");
+
+    emit(Lend + ":");
+
+    string dest = getTemp();
+    symbolTable[dest].setDataType(BOOLEAN);
+    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+
+    if (isTemporary(operand1)) freeTemp();
+    if (isTemporary(operand2)) freeTemp();
+
+    contentsOfAReg = dest;
+    pushOperand(dest);
 }
 
-void Compiler::emitLessThanCode(string operand1, string operand2){      //op2<op1
-...
+void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 < op1
+    // op2 < op1  (operand2 is left, operand1 is right)
+    if (whichType(operand1) != whichType(operand2)) {
+        processError("incompatible types in less-than comparison");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol: " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+    } else {
+        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+    }
+
+    string Ltrue = getLabel();
+    string Lend  = getLabel();
+
+    // Jump if less (signed)
+    emit("", "JL", Ltrue, "; jump if less");
+
+    // FALSE
+    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
+    emit("", "MOV", "eax, 0", "; load FALSE");
+    emit("", "JMP", Lend, "; jump to end");
+
+    emit(Ltrue + ":");
+    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
+    emit("", "MOV", "eax, -1", "; load TRUE");
+
+    emit(Lend + ":");
+
+    string dest = getTemp();
+    symbolTable[dest].setDataType(BOOLEAN);
+    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+
+    if (isTemporary(operand1)) freeTemp();
+    if (isTemporary(operand2)) freeTemp();
+
+    contentsOfAReg = dest;
+    pushOperand(dest);
 }
 
-void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     //op2<=op1
-...
+void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     // op2 <= op1
+    if (whichType(operand1) != whichType(operand2)) {
+        processError("incompatible types in less-than-or-equal comparison");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol: " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+    } else {
+        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+    }
+
+    string Ltrue = getLabel();
+    string Lend  = getLabel();
+
+    // Jump if less or equal (signed)
+    emit("", "JLE", Ltrue, "; jump if less or equal");
+
+    // FALSE
+    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
+    emit("", "MOV", "eax, 0", "; load FALSE");
+    emit("", "JMP", Lend, "; jump to end");
+
+    emit(Ltrue + ":");
+    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
+    emit("", "MOV", "eax, -1", "; load TRUE");
+
+    emit(Lend + ":");
+
+    string dest = getTemp();
+    symbolTable[dest].setDataType(BOOLEAN);
+    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+
+    if (isTemporary(operand1)) freeTemp();
+    if (isTemporary(operand2)) freeTemp();
+
+    contentsOfAReg = dest;
+    pushOperand(dest);
 }
 
-void Compiler::emitGreaterThanCode(string operand1, string operand2){           //op2>op1
-...
+void Compiler::emitGreaterThanCode(string operand1, string operand2){           // op2 > op1
+    if (whichType(operand1) != whichType(operand2)) {
+        processError("incompatible types in greater-than comparison");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol: " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+    } else {
+        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+    }
+
+    string Ltrue = getLabel();
+    string Lend  = getLabel();
+
+    // Jump if greater (signed)
+    emit("", "JG", Ltrue, "; jump if greater");
+
+    // FALSE
+    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
+    emit("", "MOV", "eax, 0", "; load FALSE");
+    emit("", "JMP", Lend, "; jump to end");
+
+    emit(Ltrue + ":");
+    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
+    emit("", "MOV", "eax, -1", "; load TRUE");
+
+    emit(Lend + ":");
+
+    string dest = getTemp();
+    symbolTable[dest].setDataType(BOOLEAN);
+    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+
+    if (isTemporary(operand1)) freeTemp();
+    if (isTemporary(operand2)) freeTemp();
+
+    contentsOfAReg = dest;
+    pushOperand(dest);
 }
 
-void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  //op2>=op1
-...
+void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  // op2 >= op1
+    if (whichType(operand1) != whichType(operand2)) {
+        processError("incompatible types in greater-than-or-equal comparison");
+        return;
+    }
+
+    if (!symbolTable.count(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
+            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
+        else {
+            processError("reference to undefined symbol: " + operand1);
+            return;
+        }
+    }
+    if (!symbolTable.count(operand2)) {
+        processError("reference to undefined symbol: " + operand2);
+        return;
+    }
+
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+        if (symbolTable.count(contentsOfAReg)) {
+            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            symbolTable[contentsOfAReg].setAlloc(YES);
+        }
+        contentsOfAReg.clear();
+    }
+
+    if (contentsOfAReg != operand2) {
+        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        contentsOfAReg = operand2;
+    }
+
+    const auto &srcEntry = symbolTable.at(operand1);
+    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+    } else {
+        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+    }
+
+    string Ltrue = getLabel();
+    string Lend  = getLabel();
+
+    // Jump if greater or equal (signed)
+    emit("", "JGE", Ltrue, "; jump if greater or equal");
+
+    // FALSE
+    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
+    emit("", "MOV", "eax, 0", "; load FALSE");
+    emit("", "JMP", Lend, "; jump to end");
+
+    emit(Ltrue + ":");
+    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
+    emit("", "MOV", "eax, -1", "; load TRUE");
+
+    emit(Lend + ":");
+
+    string dest = getTemp();
+    symbolTable[dest].setDataType(BOOLEAN);
+    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+
+    if (isTemporary(operand1)) freeTemp();
+    if (isTemporary(operand2)) freeTemp();
+
+    contentsOfAReg = dest;
+    pushOperand(dest);
 }
+
+
+
 
 /* ------------------------------------------------------
     Lexical routines
@@ -1740,6 +2178,21 @@ string Compiler::nextToken(){   // returns next tok or END_OF_FILE marker
 
     return token;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /* ------------------------------------------------------
     Other routines
     ------------------------------------------------------ */
