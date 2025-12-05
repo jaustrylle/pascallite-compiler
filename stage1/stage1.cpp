@@ -2234,28 +2234,17 @@ string Compiler::nextToken(){   // returns next tok or END_OF_FILE marker
     }
 }
 
-
-
-
-
-
-
-
-
-
-
-
 /* ------------------------------------------------------
     Other routines
     ------------------------------------------------------ */
 
 string Compiler::genInternalName(storeTypes stype) const{
     // **FIXED: Use static global counters**
-    if(stype == INTEGER){
+    if (stype == INTEGER) {
         return "I" + std::to_string(I_count++);
-    } else if(stype == BOOLEAN){
+    } else if (stype == BOOLEAN) {
         return "B" + std::to_string(B_count++);
-    } else{
+    } else {
         return "X";     // fallback for unknown types
     }
 }
@@ -2265,45 +2254,63 @@ void Compiler::processError(string err){
 
     std::cerr << "ERROR: " << err << " on line " << lineNo << std::endl;
 
-    if(listingFile.is_open()){
+    if (listingFile.is_open()) {
         listingFile << "\n";
         listingFile << "Error: Line " << lineNo << ": " << err << "\n" << std::endl;
     }
 
     // Flush object file so .asm contains header
-    if(objectFile.is_open()){
+    if (objectFile.is_open()) {
         objectFile.flush();
     }
 
-    if(errorCount > 0){
-        createListingTrailer();
-        std::exit(EXIT_FAILURE);
-    }
+    // For this assignment we stop on the first error (matches earlier behavior).
+    // createListingTrailer prints summary and closes listing; guard against recursive calls.
+    createListingTrailer();
+    std::exit(EXIT_FAILURE);
 }
+
 //////////////////// EXPANDED DURING STAGE 1
 
-void freeTemp(){
-    currentTempNo--;
-if (currentTempNo < -1)
-processError(compiler error, currentTempNo should be ≥ –1)
+void Compiler::freeTemp(){
+    // Decrement currentTempNo and ensure it does not go below -1
+    --currentTempNo;
+    if (currentTempNo < -1) {
+        processError("compiler error: currentTempNo should be >= -1");
+    }
 }
 
-string getTemp(){
-    string temp;
-currentTempNo++;
-temp = "T" + currentTempNo;
-if (currentTempNo > maxTempNo)
-insert(temp, UNKNOWN, VARIABLE, "", NO, 1)
-maxTempNo++
-return temp
+string Compiler::getTemp(){
+    // Allocate a new temporary external name "Tn"
+    ++currentTempNo;
+    if (currentTempNo > maxTempNo) {
+        maxTempNo = currentTempNo;
+    }
+    std::string temp = "T" + std::to_string(currentTempNo);
+
+    // If this temp is new, insert into symbol table as an INTEGER variable by default.
+    // (Type may be adjusted later by code generation routines.)
+    if (symbolTable.count(temp) == 0) {
+        insert(temp, INTEGER, VARIABLE, "", YES, 1);
+    }
+
+    return temp;
 }
 
-string getLabel(){
-...
+string Compiler::getLabel(){
+    static int labelNo = 0;
+    std::ostringstream oss;
+    oss << "L" << labelNo++;
+    return oss.str();
 }
 
-bool isTemporary(string s) const{       // determines if s rep. temp
-...
+bool Compiler::isTemporary(string s) const{       // determines if s represents a temporary
+    if (s.size() < 2) return false;
+    if (s[0] != 'T') return false;
+    for (size_t i = 1; i < s.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+    }
+    return true;
 }
 
 /////////////////////////////////////////////////////////////////////////////
