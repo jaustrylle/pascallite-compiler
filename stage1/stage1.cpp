@@ -176,225 +176,273 @@ void Compiler::createListingTrailer() {
     ------------------------------------------------------ */
 
 void Compiler::prog(){  // stage0, prod 1
-        // token is already "program"
+    // Expect token to be "program" on entry
+    if (token != "program") {
+        processError("keyword \"program\" expected");
+        // try to recover: attempt to find program token
+    } else {
+        token = nextToken(); // consume "program" and advance to program name
+    }
 
-    progStmt();
-    if(token == "const"){
+    progStmt();            // parse program header (program name, semicolon)
+
+    // optional const and var blocks (order: const* var*)
+    if (token == "const") {
         consts();
     }
-    if(token == "var"){
+    if (token == "var") {
         vars();
     }
-    if(token != "begin"){
+
+    if (token != "begin") {
         processError("keyword \"begin\" expected");
-        // Recovery for Stage 1, Stage 0 we terminate
+        // Recovery for Stage 1: continue attempting to parse body
     }
-    beginEndStmt();
-        // Use the static global token value
-    if(token != END_FILE_TOKEN){
+
+    beginEndStmt();        // parse begin ... end .
+
+    // After program, expect EOF token
+    if (token != END_FILE_TOKEN) {
         processError("no text may follow \"end\"");
     }
 }
 
 void Compiler::progStmt(){      // stage 0, prod 2
+    // On entry token should be program name (already consumed "program")
     std::string x;
 
-    x = nextToken();    // get program name
-
-    if(!isNonKeyId(x)){
+    if (!isNonKeyId(token)) {
         processError("program name expected");
-    }
-    token = nextToken();        // expect semicolon
-    if(token != ";"){
-        processError("semicolon expected");
+        // try to recover: skip token
+        x = token;
+    } else {
+        x = token;
     }
 
-    token = nextToken();        // advance to next tok
+    token = nextToken();        // expect semicolon
+    if (token != ";") {
+        processError("semicolon expected");
+        // attempt to continue
+    }
+
+    token = nextToken();        // advance to next token after semicolon
+    // Insert program name into symbol table
     insert(x, PROG_NAME, CONSTANT, x, NO, 0);
     code("program", x);
 }
 
 void Compiler::consts(){        // stage0, prod 3
-    // token is already "const" from prog()
-
-    token = nextToken();        // advance to next tok
-    if(!isNonKeyId(token)){
+    // token is "const" on entry
+    token = nextToken();        // advance to first identifier (or error)
+    if (!isNonKeyId(token)) {
         processError("non-keyword identifier must follow \"const\"");
+        // attempt to continue: return to caller
+        return;
     }
-    constStmts();       // process const declars
+
+    // Parse one or more const declarations
+    while (isNonKeyId(token)) {
+        constStmts();
+    }
 }
 
 void Compiler::vars(){  // stage 0, prod 4
-    // token is already "var" from prog()
-
-    token = nextToken();        // advance to next tok
-    if(!isNonKeyId(token)){
+    // token is "var" on entry
+    token = nextToken();        // advance to first identifier (or error)
+    if (!isNonKeyId(token)) {
         processError("non-keyword identifier must follow \"var\"");
+        // attempt to continue
+        return;
     }
 
-    varStmts(); // process var declars
+    // Parse one or more var declarations
+    while (isNonKeyId(token)) {
+        varStmts();
+    }
 }
 
 void Compiler::beginEndStmt(){  // stage 0, prod 5
-    // token is already "begin"
+    // token is "begin" on entry
+    token = nextToken();        // advance to first token inside begin...end
 
-    token = nextToken();        // advance to next tok
-    if(!isNonKeyId(token)){
-        processError("non-keyword identifier must follow \"var\"");
+    // In Stage 1 this is where execStmts() would be invoked.
+    // For now, skip tokens until we find "end" (or EOF) while allowing nested handling later.
+    while (token != "end" && !(token.size() == 1 && token[0] == END_OF_FILE)) {
+        // If you implement execStmts later, call execStmts() here instead of skipping.
+        token = nextToken();
     }
 
-    varStmts(); // process var declars
-}
-
-void Compiler::beginEndStmt(){  // stage 0, prod 5
-    // token is already "begin"
-
-    token = nextToken();        // advance to next tok
-    if(token != "end"){
-        // In Stage 0, "end" immediately, in Stage 1 process statements
+    if (token != "end") {
         processError("keyword \"end\" expected");
+        // attempt to continue
+    } else {
+        token = nextToken();    // consume "end"
     }
 
-    token = nextToken();        // advance to next tok
-    if(token != "."){
+    if (token != ".") {
         processError("period expected");
+        // attempt to continue
+    } else {
+        token = nextToken();    // consume '.' and advance (should be EOF)
     }
 
-    token = nextToken();        // final advance, should be END_OF_FILE
     code("end", ".");
 }
 
 void Compiler::constStmts(){    // stage 0, prod 6
+    // On entry token is identifier for the const declaration
     std::string x, y;
-    storeTypes type;
+    storeTypes type = UNKNOWN;
     std::string val; // actual value to store
 
-    if(!isNonKeyId(token)){
+    if (!isNonKeyId(token)) {
         processError("non-keyword identifier expected");
+        // try to recover
+        token = nextToken();
+        return;
     }
 
-    x = token;
-    if(nextToken() != "="){
+    x = token;                 // identifier name
+    token = nextToken();       // should be '='
+    if (token != "=") {
         processError("\"=\" expected");
+        // attempt to continue
     }
 
-    y = nextToken(); // Token on the right of '='
+    token = nextToken();       // token on the right of '='
+    y = token;
+
     // 1. Check for unary operator (+, -, not)
-    if(y == "+" || y == "-"){
+    if (y == "+" || y == "-") {
         // Case 1: Signed Integer
         std::string sign = y;
-        std::string next = nextToken();
-        if(!isInteger(next)){
+        token = nextToken();
+        if (!isInteger(token)) {
             processError("integer expected after sign");
+            // attempt to continue
+        } else {
+            val = sign + token; // e.g., "-1"
+            type = INTEGER;
         }
-        val = sign + next; // e.g., "-1"
-        type = INTEGER;
+        token = nextToken(); // advance past the integer literal
     }
-    else if(y == "not"){
+    else if (y == "not") {
         // Case 2: NOT Boolean
-        std::string next = nextToken();
-        if(!isBoolean(next)){
+        token = nextToken();
+        if (!isBoolean(token)) {
             processError("boolean expected after \"not\"");
+        } else {
+            val = (token == "true") ? "false" : "true"; // Flip the value
+            type = BOOLEAN;
         }
-        val = (next == "true") ? "false" : "true"; // Flip the value
-        type = BOOLEAN;
+        token = nextToken(); // advance past the boolean literal
     }
     else {
-        // Case 3: Simple Literal (0, true) OR Non-Key-Id (big)
-        if(isInteger(y) || isBoolean(y)){
+        // Case 3: Simple Literal (0, true) OR Non-Key-Id (existing const)
+        if (isInteger(y) || isBoolean(y)) {
             // Subcase 3a: Literal (e.g., "0", "true")
             type = isInteger(y) ? INTEGER : BOOLEAN;
             val = y;
+            token = nextToken(); // advance past literal
         } else if (isNonKeyId(y)) {
             // Subcase 3b: Existing Constant Name (e.g., "big")
             type = whichType(y);
             val = whichValue(y);
+            token = nextToken(); // advance past identifier
         } else {
-             processError("token to right of \"=\" illegal");
+            processError("token to right of \"=\" illegal");
+            token = nextToken(); // try to continue
         }
     }
 
     // 4. Expect and process semicolon
-    if(nextToken() != ";"){
+    if (token != ";") {
         processError("semicolon expected");
+        // attempt to continue
+    } else {
+        token = nextToken(); // consume ';' and advance
     }
 
     // 5. Final Type check
-    if(type != INTEGER && type != BOOLEAN){
+    if (type != INTEGER && type != BOOLEAN) {
         processError("data type of token on the right-hand side must be INTEGER or BOOLEAN");
     }
 
-    // 6. Insert into Symbol Table
+    // 6. Insert into Symbol Table as a constant
     insert(x, type, CONSTANT, val, YES, 1);
 
-    // 7. Advance token and check for recursion or block end
-    token = nextToken();
-    if(token != "begin" && token != "var" && !isNonKeyId(token)){
-        processError("non-keyword identifier, \"begin\", or \"var\" expected");
-    }
-
-    if(isNonKeyId(token)){
-        constStmts();   // recursive call
-    }
+    // 7. If next token is another identifier, continue parsing consts (handled by caller loop)
+    // (caller of consts() loops while isNonKeyId(token))
 }
 
 void Compiler::varStmts(){      // stage 0, prod 7
-    std::string x, y;
-    storeTypes varType;
-
-    if(!isNonKeyId(token)){
+    // On entry token is identifier (first in a comma-separated list)
+    if (!isNonKeyId(token)) {
         processError("non-keyword identifier expected");
+        token = nextToken();
+        return;
     }
 
-    x = ids();  // parse identifier list (comma-separated string)
-    if(token != ":"){
+    // Parse identifier list and leave token at the token after the list
+    std::string idlist = ids(); // ids() will advance token appropriately
+
+    // Expect colon
+    if (token != ":") {
         processError("\":\" expected");
+        // attempt to continue
+    } else {
+        token = nextToken(); // consume ':' and advance to type
     }
 
-    token = nextToken();        // advance to type
-    if(token != "integer" && token != "boolean"){
+    if (token != "integer" && token != "boolean") {
         processError("illegal type follows \":\"");
     }
 
-    y = token; // "integer" or "boolean"
-    varType = (y == "integer") ? INTEGER : BOOLEAN;
+    storeTypes varType = (token == "integer") ? INTEGER : BOOLEAN;
 
     token = nextToken(); // advance past type
-    if(token != ";"){
+    if (token != ";") {
         processError("semicolon expected");
+    } else {
+        token = nextToken(); // consume ';' and advance
     }
 
-    // Must use enums from stage0.h
-    insert(x, varType, VARIABLE, "", YES, 1);
-
-    token = nextToken();        // advance to next decl or block
-    if(token != "begin" && !isNonKeyId(token)){
-        processError("non-keyword identifier or \"begin\" expected");
+    // Insert each identifier from the comma-separated list into the symbol table
+    std::vector<std::string> names = splitNames(idlist);
+    for (const auto &name : names) {
+        if (!name.empty()) {
+            insert(name, varType, VARIABLE, "", YES, 1);
+        }
     }
 
-    if(isNonKeyId(token)){
-        varStmts();     // recursive call for add decl
-    }
+    // If next token is another identifier, caller loop will continue parsing varStmts
 }
 
 string Compiler::ids(){         // stage 0, prod 8
-    std::string tempString;
-
-    if(!isNonKeyId(token)){
+    // On entry token is an identifier
+    if (!isNonKeyId(token)) {
         processError("non-keyword identifier expected");
+        // try to recover: return empty and advance
+        std::string bad = token;
+        token = nextToken();
+        return bad;
     }
 
-    tempString = token;
+    std::string tempString = token; // first identifier
+    token = nextToken();            // advance to next token after identifier
 
-    token = nextToken();        // advance to next tok
-    if(token == ","){
-        token = nextToken();    // advance past comma
-        if(!isNonKeyId(token)){
+    if (token == ",") {
+        token = nextToken();        // advance past comma to next identifier
+        if (!isNonKeyId(token)) {
             processError("non-keyword identifier expected");
+        } else {
+            // recursive call returns the rest of the list (as comma-separated string)
+            std::string rest = ids();
+            tempString = tempString + "," + rest;
         }
-        tempString = tempString + "," + ids();      // recursive call
     }
 
+    // When returning, token is left at the token after the identifier list (either ":" or other)
     return tempString;
 }
 
