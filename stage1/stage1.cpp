@@ -1722,7 +1722,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
     // Create destination temporary to hold boolean result
     string dest = getTemp();
     // Ensure dest is boolean
-    symbolTable[dest].setDataType(BOOLEAN);
+    symbolTableat(dest).setDataType(BOOLEAN);
 
     // Store eax into dest internal name
     emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
@@ -1802,7 +1802,7 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
     emit(Lend + ":");
 
     string dest = getTemp();
-    symbolTable[dest].setDataType(BOOLEAN);
+    symbolTable.at(dest).setDataType(BOOLEAN);
     emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
@@ -1870,7 +1870,7 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
     emit(Lend + ":");
 
     string dest = getTemp();
-    symbolTable[dest].setDataType(BOOLEAN);
+    symbolTable.at(dest).setDataType(BOOLEAN);
     emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
@@ -1937,7 +1937,7 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
     emit(Lend + ":");
 
     string dest = getTemp();
-    symbolTable[dest].setDataType(BOOLEAN);
+    symbolTable.at(dest).setDataType(BOOLEAN);
     emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
@@ -2004,7 +2004,7 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
     emit(Lend + ":");
 
     string dest = getTemp();
-    symbolTable[dest].setDataType(BOOLEAN);
+    symbolTable.at(dest).setDataType(BOOLEAN);
     emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
@@ -2036,7 +2036,7 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
             emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable[contentsOfAReg].setAlloc(YES);
+            symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
