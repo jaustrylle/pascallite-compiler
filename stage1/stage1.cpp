@@ -1456,7 +1456,7 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
     }
     // Ensure value is in eax
     if (contentsOfAReg != operand1) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", "; load " + operand1 + " into eax for negation"$
+      emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", "; load " + operand1 + " into eax for negation"$);
     }
 
     emit("", "neg", "eax", "; negate eax");
