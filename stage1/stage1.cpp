@@ -627,31 +627,34 @@ void Compiler::expresses(){      // stage 1, prod 10
         std::string left  = popOperand();
 
         if (left.empty() || right.empty()) {
-            // ... (error handling) ...
+            // ... (error handling) ... GOES HERE!!!!!
             return;
         }
 
-        // Apply operator: Emitter must calculate 'left op right', leave result in EAX,
-        // and crucially, set contentsOfAReg = left.
+    // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
         if (op == "+") {
-            emitAdditionCode(left, right);
+            emitAdditionCode(right, left); // NOTE: Corrected argument order for (op1, op2) where op2 is accumulator
         } else if (op == "-") {
-            emitSubtractionCode(left, right);
+            emitSubtractionCode(right, left); // NOTE: Corrected argument order
         } else if (op == "or" || op == "||") {
-            emitOrCode(left, right);
+            emitOrCode(right, left); // NOTE: Corrected argument order
         } else {
             processError("unknown additive/logical operator: " + op);
         }
 
-        // --- OPTIMIZED STAGE 1 LOGIC START ---
-        // 1. The accumulated result is in EAX, tracked by the name 'left'.
-        // 2. Free the right operand temporary if necessary.
-        if (isTemporary(right)) freeTemp();
+        // --- NEW CORRECT LOGIC START ---
+        // 1. EAX holds the result. Save it to a new temporary.
+        std::string dest = getTemp();
+        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
 
-        // 3. Push the left operand's name back onto the stack to represent the new result.
-        // The value in EAX is now associated with the name 'left'.
-        pushOperand(left);
-        // --- OPTIMIZED STAGE 1 LOGIC END ---
+        // 2. Free both operand temporaries, as they are now consumed.
+        if (isTemporary(right)) freeTemp();
+        if (isTemporary(left)) freeTemp();
+
+        // 3. Update A register tracking and push the result (the new temporary)
+        contentsOfAReg = dest;
+        pushOperand(dest);
+        // --- NEW CORRECT LOGIC END ---
     }
 }
 
@@ -673,33 +676,36 @@ void Compiler::terms(){          // stage 1, prod 12
         std::string left  = popOperand();
 
         if (left.empty() || right.empty()) {
-            // ... (error handling) ...
+            // ... (error handling) ... GOES HERE!!!!
             return;
         }
 
-        // Apply operator: Emitter must calculate 'left op right', leave result in EAX,
-        // and crucially, set contentsOfAReg = left.
+        // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
         if (op == "*") {
-            emitMultiplicationCode(left, right);
+            emitMultiplicationCode(right, left); // NOTE: Corrected argument order
         } else if (op == "/") {
-            emitDivisionCode(left, right);
+            emitDivisionCode(right, left); // NOTE: Corrected argument order
         } else if (op == "%") {
-            emitModuloCode(left, right);
+            emitModuloCode(right, left); // NOTE: Corrected argument order
         } else if (op == "and" || op == "&&") {
-            emitAndCode(left, right);
+            emitAndCode(right, left); // NOTE: Corrected argument order
         } else {
             processError("unknown multiplicative/logical operator: " + op);
         }
 
-        // --- OPTIMIZED STAGE 1 LOGIC START ---
-        // 1. The accumulated result is in EAX, tracked by the name 'left'.
-        // 2. Free the right operand temporary if necessary.
-        if (isTemporary(right)) freeTemp();
+        // --- NEW CORRECT LOGIC START ---
+        // 1. EAX holds the result. Save it to a new temporary.
+        std::string dest = getTemp();
+        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
 
-        // 3. Push the left operand's name back onto the stack to represent the new result.
-        // The value in EAX is now associated with the name 'left'.
-        pushOperand(left);
-        // --- OPTIMIZED STAGE 1 LOGIC END ---
+        // 2. Free both operand temporaries, as they are now consumed.
+        if (isTemporary(right)) freeTemp();
+        if (isTemporary(left)) freeTemp();
+
+        // 3. Update A register tracking and push the result (the new temporary)
+        contentsOfAReg = dest;
+        pushOperand(dest);
+        // --- NEW CORRECT LOGIC END ---
     }
 }
 
