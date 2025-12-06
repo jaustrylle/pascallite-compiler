@@ -1139,15 +1139,15 @@ void Compiler::emitWriteCode(string operand, string /*operand2*/){
     // Ensure the value is in A (eax). If not, load it.
     if (contentsOfAReg != name) {
         // Load the value into eax from the symbol's internal storage
-        emit("", "MOV", "eax, " + entry.getInternalName(), "; load " + name + " into eax");
+        emit("", "mov", "eax, " + entry.getInternalName(), "; load " + name + " into eax");
         contentsOfAReg = name;
     }
 
     // For INTEGER or BOOLEAN, call WriteInt (assumes value in eax)
     if (entry.getDataType() == INTEGER || entry.getDataType() == BOOLEAN) {
-        emit("", "CALL", "WriteInt", "; write eax");
+        emit("", "call", "WriteInt", "; write eax");
         // Print newline / CRLF
-        emit("", "CALL", "Crlf", "; newline");
+        emit("", "call", "Crlf", "; newline");
     } else {
         processError("cannot write value of this type: " + name);
     }
@@ -1201,15 +1201,15 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
         // If operand1 is a literal constant, load immediate into eax
         if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
             // Use immediate move for integer literal
-            emit("", "MOV", "eax, " + srcEntry.getValue(), "; load immediate literal " + srcEntry.getValue());
+            emit("", "mov", "eax, " + srcEntry.getValue(), "; load immediate literal " + srcEntry.getValue());
         } else {
             // Load from memory (internal name)
-            emit("", "MOV", "eax, " + srcEntry.getInternalName(), "; load " + operand1 + " into eax");
+            emit("", "mov", "eax, " + srcEntry.getInternalName(), "; load " + operand1 + " into eax");
         }
     }
 
     // Store eax into destination memory
-    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store eax into " + operand2);
+    emit("", "mov", destEntry.getInternalName() + ", eax", "; store eax into " + operand2);
 
     // Update contentsOfAReg to reflect that eax now corresponds to the destination
     contentsOfAReg = operand2;
@@ -1248,7 +1248,7 @@ void Compiler::emitAdditionCode(string operand1, string operand2){      // op2 +
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
             // store eax into that symbol's internal name
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             // mark it allocated
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
@@ -1258,21 +1258,21 @@ void Compiler::emitAdditionCode(string operand1, string operand2){      // op2 +
     // Load destination (operand2) into eax if it's not already in A
     if (contentsOfAReg != operand2) {
         const auto &destEntry = symbolTable.at(operand2);
-        emit("", "MOV", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     // Add operand1 to eax (use immediate if literal integer)
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "ADD", "eax, " + srcEntry.getValue(), "; eax += " + srcEntry.getValue());
+        emit("", "add", "eax, " + srcEntry.getValue(), "; eax += " + srcEntry.getValue());
     } else {
-        emit("", "ADD", "eax, " + srcEntry.getInternalName(), "; eax += " + operand1);
+        emit("", "add", "eax, " + srcEntry.getInternalName(), "; eax += " + operand1);
     }
 
     // Store result back to destination memory
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
 
     // Update A register tracking: now A corresponds to operand2
     contentsOfAReg = operand2;
@@ -1303,7 +1303,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 -
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1311,19 +1311,19 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 -
 
     if (contentsOfAReg != operand2) {
         const auto &destEntry = symbolTable.at(operand2);
-        emit("", "MOV", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "SUB", "eax, " + srcEntry.getValue(), "; eax -= " + srcEntry.getValue());
+        emit("", "sub", "eax, " + srcEntry.getValue(), "; eax -= " + srcEntry.getValue());
     } else {
-        emit("", "SUB", "eax, " + srcEntry.getInternalName(), "; eax -= " + operand1);
+        emit("", "sub", "eax, " + srcEntry.getInternalName(), "; eax -= " + operand1);
     }
 
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
     contentsOfAReg = operand2;
 
     if (isTemporary(operand1)) freeTemp();
@@ -1350,7 +1350,7 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){        
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1358,19 +1358,19 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){        
 
     if (contentsOfAReg != operand2) {
         const auto &destEntry = symbolTable.at(operand2);
-        emit("", "MOV", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "IMUL", "eax, " + srcEntry.getValue(), "; eax *= " + srcEntry.getValue());
+        emit("", "imul", "eax, " + srcEntry.getValue(), "; eax *= " + srcEntry.getValue());
     } else {
-        emit("", "IMUL", "eax, " + srcEntry.getInternalName(), "; eax *= " + operand1);
+        emit("", "imul", "eax, " + srcEntry.getInternalName(), "; eax *= " + operand1);
     }
 
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
     contentsOfAReg = operand2;
 
     if (isTemporary(operand1)) freeTemp();
@@ -1399,7 +1399,7 @@ void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 /
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1408,12 +1408,12 @@ void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 /
     // Load dividend (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
         const auto &dividendEntry = symbolTable.at(operand2);
-        emit("", "MOV", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
+        emit("", "mov", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     // Sign-extend eax into edx:eax
-    emit("", "CDQ", "", "; sign-extend eax into edx:eax");
+    emit("", "cdq", "", "; sign-extend eax into edx:eax");
 
     // Perform idiv by divisor (operand1)
     const auto &divisorEntry = symbolTable.at(operand1);
@@ -1424,14 +1424,14 @@ void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 /
         if (isInteger(immName) && !symbolTable.count(immName)) {
             insert(immName, INTEGER, CONSTANT, immName, YES, 1);
         }
-        emit("", "IDIV", divisorEntry.getInternalName(), "; idiv by " + operand1);
+        emit("", "idiv", divisorEntry.getInternalName(), "; idiv by " + operand1);
     } else {
-        emit("", "IDIV", divisorEntry.getInternalName(), "; idiv by " + operand1);
+        emit("", "idiv", divisorEntry.getInternalName(), "; idiv by " + operand1);
     }
 
     // After IDIV, quotient in eax. Store quotient into destination (operand2's internal name)
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "MOV", destEntry.getInternalName() + ", eax", "; store quotient into " + operand2);
+    emit("", "mov", destEntry.getInternalName() + ", eax", "; store quotient into " + operand2);
 
     // Update A register tracking
     contentsOfAReg = operand2;
@@ -1462,7 +1462,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1470,18 +1470,18 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 
     if (contentsOfAReg != operand2) {
         const auto &dividendEntry = symbolTable.at(operand2);
-        emit("", "MOV", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
+        emit("", "mov", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
-    emit("", "CDQ", "", "; sign-extend eax into edx:eax for idiv");
+    emit("", "cdq", "", "; sign-extend eax into edx:eax for idiv");
 
     const auto &divisorEntry = symbolTable.at(operand1);
-    emit("", "IDIV", divisorEntry.getInternalName(), "; idiv by " + operand1);
+    emit("", "idiv", divisorEntry.getInternalName(), "; idiv by " + operand1);
 
     // Remainder is in edx; store edx into destination
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "MOV", destEntry.getInternalName() + ", edx", "; store remainder into " + operand2);
+    emit("", "mov", destEntry.getInternalName() + ", edx", "; store remainder into " + operand2);
 
     // A register no longer corresponds to destination (eax holds quotient)
     contentsOfAReg.clear();
@@ -1502,13 +1502,13 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
 
     // Ensure value is in eax
     if (contentsOfAReg != operand1) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for negation");
+        emit("", "mov", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for negation");
     }
 
-    emit("", "NEG", "eax", "; negate eax");
+    emit("", "neg", "eax", "; negate eax");
 
     // Store back
-    emit("", "MOV", symbolTable.at(operand1).getInternalName() + ", eax", "; store negated value into " + operand1);
+    emit("", "mov", symbolTable.at(operand1).getInternalName() + ", eax", "; store negated value into " + operand1);
 
     contentsOfAReg = operand1;
 }
@@ -1525,14 +1525,14 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !
 
     // Ensure value is in eax
     if (contentsOfAReg != operand1) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for not");
+        emit("", "mov", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for not");
     }
 
     // Bitwise NOT will flip -1 <-> 0 for boolean representation used earlier
-    emit("", "NOT", "eax", "; bitwise not eax");
+    emit("", "not", "eax", "; bitwise not eax");
 
     // Store back
-    emit("", "MOV", symbolTable.at(operand1).getInternalName() + ", eax", "; store not result into " + operand1);
+    emit("", "mov", symbolTable.at(operand1).getInternalName() + ", eax", "; store not result into " + operand1);
 
     contentsOfAReg = operand1;
 }
@@ -1560,7 +1560,7 @@ void Compiler::emitAndCode(string operand1, string operand2){           // op2 &
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1568,20 +1568,20 @@ void Compiler::emitAndCode(string operand1, string operand2){           // op2 &
 
     // Load destination (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     // AND with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "AND", "eax, " + srcEntry.getValue(), "; eax &= " + srcEntry.getValue());
+        emit("", "and", "eax, " + srcEntry.getValue(), "; eax &= " + srcEntry.getValue());
     } else {
-        emit("", "AND", "eax, " + srcEntry.getInternalName(), "; eax &= " + operand1);
+        emit("", "and", "eax, " + srcEntry.getInternalName(), "; eax &= " + operand1);
     }
 
     // Store result back to destination
-    emit("", "MOV", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
 
     // Update A register tracking
     contentsOfAReg = operand2;
@@ -1616,7 +1616,7 @@ void Compiler::emitOrCode(string operand1, string operand2){            // op2 |
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1624,20 +1624,20 @@ void Compiler::emitOrCode(string operand1, string operand2){            // op2 |
 
     // Load destination (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     // OR with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "OR", "eax, " + srcEntry.getValue(), "; eax |= " + srcEntry.getValue());
+        emit("", "or", "eax, " + srcEntry.getValue(), "; eax |= " + srcEntry.getValue());
     } else {
-        emit("", "OR", "eax, " + srcEntry.getInternalName(), "; eax |= " + operand1);
+        emit("", "or", "eax, " + srcEntry.getInternalName(), "; eax |= " + operand1);
     }
 
     // Store result back to destination
-    emit("", "MOV", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
 
     // Update A register tracking
     contentsOfAReg = operand2;
@@ -1672,7 +1672,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1680,16 +1680,16 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
 
     // Load operand2 into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
     }
 
     // Prepare labels
@@ -1704,16 +1704,16 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
         insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
     }
     // Use immediate 0 for speed
-    emit("", "MOV", "eax, 0", "; load FALSE");
+    emit("", "mov", "eax, 0", "; load FALSE");
     // Jump to end
-    emit("", "JMP", Lend, "; jump to end");
+    emit("", "jmp", Lend, "; jump to end");
 
     // Label Ltrue: load TRUE into eax (-1)
     emit(Ltrue + ":");
     if (!symbolTable.count("true")) {
         insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
     }
-    emit("", "MOV", "eax, -1", "; load TRUE");
+    emit("", "mov", "eax, -1", "; load TRUE");
 
     // Label Lend:
     emit(Lend + ":");
@@ -1724,7 +1724,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
     symbolTable.at(dest).setDataType(BOOLEAN);
 
     // Store eax into dest internal name
-    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     // Deassign/free temporaries used as operands
     if (isTemporary(operand1)) freeTemp();
@@ -1761,48 +1761,48 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
     string Lend  = getLabel();
 
     // Jump if not equal to Ltrue
-    emit("", "JNE", Ltrue, "; jump if not equal");
+    emit("", "jne", Ltrue, "; jump if not equal");
 
     // Load FALSE into eax
     if (!symbolTable.count("false")) {
         insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
     }
-    emit("", "MOV", "eax, 0", "; load FALSE");
-    emit("", "JMP", Lend, "; jump to end");
+    emit("", "mov", "eax, 0", "; load FALSE");
+    emit("", "jmp", Lend, "; jump to end");
 
     emit(Ltrue + ":");
     if (!symbolTable.count("true")) {
         insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
     }
-    emit("", "MOV", "eax, -1", "; load TRUE");
+    emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -1833,22 +1833,22 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
@@ -1859,18 +1859,18 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
 
     // FALSE
     if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    emit("", "MOV", "eax, 0", "; load FALSE");
-    emit("", "JMP", Lend, "; jump to end");
+    emit("", "mov", "eax, 0", "; load FALSE");
+    emit("", "jmp", Lend, "; jump to end");
 
     emit(Ltrue + ":");
     if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    emit("", "MOV", "eax, -1", "; load TRUE");
+    emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -1900,44 +1900,44 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
     string Lend  = getLabel();
 
     // Jump if less or equal (signed)
-    emit("", "JLE", Ltrue, "; jump if less or equal");
+    emit("", "jle", Ltrue, "; jump if less or equal");
 
     // FALSE
     if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    emit("", "MOV", "eax, 0", "; load FALSE");
-    emit("", "JMP", Lend, "; jump to end");
+    emit("", "mov", "eax, 0", "; load FALSE");
+    emit("", "jmp", Lend, "; jump to end");
 
     emit(Ltrue + ":");
     if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    emit("", "MOV", "eax, -1", "; load TRUE");
+    emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -1967,44 +1967,44 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
     string Lend  = getLabel();
 
     // Jump if greater (signed)
-    emit("", "JG", Ltrue, "; jump if greater");
+    emit("", "jg", Ltrue, "; jump if greater");
 
     // FALSE
     if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    emit("", "MOV", "eax, 0", "; load FALSE");
-    emit("", "JMP", Lend, "; jump to end");
+    emit("", "mov", "eax, 0", "; load FALSE");
+    emit("", "jmp", Lend, "; jump to end");
 
     emit(Ltrue + ":");
     if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    emit("", "MOV", "eax, -1", "; load TRUE");
+    emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -2034,14 +2034,14 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "MOV", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "MOV", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -2060,18 +2060,18 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
 
     // FALSE
     if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    emit("", "MOV", "eax, 0", "; load FALSE");
-    emit("", "JMP", Lend, "; jump to end");
+    emit("", "mov", "eax, 0", "; load FALSE");
+    emit("", "jmp", Lend, "; jump to end");
 
     emit(Ltrue + ":");
     if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    emit("", "MOV", "eax, -1", "; load TRUE");
+    emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
