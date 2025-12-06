@@ -1107,7 +1107,7 @@ void Compiler::emitReadCode(string operand, string /*operand2*/){
     emit("", "call", "ReadInt", "; read int; value placed in eax");
 
     // Store eax into the variable's storage (use internal name)
-    emit("", "mov", entry.getInternalName() + ", eax", "; store eax at " + name);
+    emit("", "mov", "[" + entry.getInternalName() + "], eax", "; store eax at " + name);
 
     // Track that A register (eax) no longer holds a useful named value;
     // but per the spec we set contentsOfAReg to the variable that now contains the value
@@ -1139,7 +1139,7 @@ void Compiler::emitWriteCode(string operand, string /*operand2*/){
     // Ensure the value is in A (eax). If not, load it.
     if (contentsOfAReg != name) {
         // Load the value into eax from the symbol's internal storage
-        emit("", "mov", "eax, " + entry.getInternalName(), "; load " + name + " into eax");
+        emit("", "mov", "eax, [" + entry.getInternalName() + "]", "; load " + name + " into eax");
         contentsOfAReg = name;
     }
 
@@ -1204,12 +1204,12 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
             emit("", "mov", "eax, " + srcEntry.getValue(), "; load immediate literal " + srcEntry.getValue());
         } else {
             // Load from memory (internal name)
-            emit("", "mov", "eax, " + srcEntry.getInternalName(), "; load " + operand1 + " into eax");
+            emit("", "mov", "eax, [" + srcEntry.getInternalName() + "]", "; load " + operand1 + " into eax");
         }
     }
 
     // Store eax into destination memory
-    emit("", "mov", destEntry.getInternalName() + ", eax", "; store eax into " + operand2);
+    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store eax into " + operand2);
 
     // Update contentsOfAReg to reflect that eax now corresponds to the destination
     contentsOfAReg = operand2;
@@ -1248,7 +1248,7 @@ void Compiler::emitAdditionCode(string operand1, string operand2){      // op2 +
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
             // store eax into that symbol's internal name
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             // mark it allocated
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
@@ -1258,7 +1258,7 @@ void Compiler::emitAdditionCode(string operand1, string operand2){      // op2 +
     // Load destination (operand2) into eax if it's not already in A
     if (contentsOfAReg != operand2) {
         const auto &destEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + destEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1272,7 +1272,7 @@ void Compiler::emitAdditionCode(string operand1, string operand2){      // op2 +
 
     // Store result back to destination memory
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store result into " + operand2);
 
     // Update A register tracking: now A corresponds to operand2
     contentsOfAReg = operand2;
@@ -1303,7 +1303,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 -
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1311,7 +1311,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 -
 
     if (contentsOfAReg != operand2) {
         const auto &destEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + destEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1323,7 +1323,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 -
     }
 
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store result into " + operand2);
     contentsOfAReg = operand2;
 
     if (isTemporary(operand1)) freeTemp();
@@ -1350,7 +1350,7 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){        
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1358,7 +1358,7 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){        
 
     if (contentsOfAReg != operand2) {
         const auto &destEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, " + destEntry.getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + destEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1370,7 +1370,7 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){        
     }
 
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", destEntry.getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store result into " + operand2);
     contentsOfAReg = operand2;
 
     if (isTemporary(operand1)) freeTemp();
@@ -1399,7 +1399,7 @@ void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 /
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1408,7 +1408,7 @@ void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 /
     // Load dividend (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
         const auto &dividendEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + dividendEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1431,7 +1431,7 @@ void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 /
 
     // After IDIV, quotient in eax. Store quotient into destination (operand2's internal name)
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", destEntry.getInternalName() + ", eax", "; store quotient into " + operand2);
+    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store quotient into " + operand2);
 
     // Update A register tracking
     contentsOfAReg = operand2;
@@ -1462,7 +1462,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1470,7 +1470,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 
     if (contentsOfAReg != operand2) {
         const auto &dividendEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, " + dividendEntry.getInternalName(), "; load dividend " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + dividendEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1481,7 +1481,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 
     // Remainder is in edx; store edx into destination
     const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", destEntry.getInternalName() + ", edx", "; store remainder into " + operand2);
+    emit("", "mov", "[" + destEntry.getInternalName() + "], edx", "; store remainder into " + operand2);
 
     // A register no longer corresponds to destination (eax holds quotient)
     contentsOfAReg.clear();
@@ -1502,13 +1502,13 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
 
     // Ensure value is in eax
     if (contentsOfAReg != operand1) {
-        emit("", "mov", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for negation");
+        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", "; load " + operand1 + " into eax for negation");
     }
 
     emit("", "neg", "eax", "; negate eax");
 
     // Store back
-    emit("", "mov", symbolTable.at(operand1).getInternalName() + ", eax", "; store negated value into " + operand1);
+    emit("", "mov", "[" + symbolTable.at(operand1).getInternalName() + "], eax", "; store negated value into " + operand1);
 
     contentsOfAReg = operand1;
 }
@@ -1525,14 +1525,14 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !
 
     // Ensure value is in eax
     if (contentsOfAReg != operand1) {
-        emit("", "mov", "eax, " + symbolTable.at(operand1).getInternalName(), "; load " + operand1 + " into eax for not");
+        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", "; load " + operand1 + " into eax for not");
     }
 
     // Bitwise NOT will flip -1 <-> 0 for boolean representation used earlier
     emit("", "not", "eax", "; bitwise not eax");
 
     // Store back
-    emit("", "mov", symbolTable.at(operand1).getInternalName() + ", eax", "; store not result into " + operand1);
+    emit("", "mov", "[" + symbolTable.at(operand1).getInternalName() + "], eax", "; store not result into " + operand1);
 
     contentsOfAReg = operand1;
 }
@@ -1560,7 +1560,7 @@ void Compiler::emitAndCode(string operand1, string operand2){           // op2 &
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1568,7 +1568,7 @@ void Compiler::emitAndCode(string operand1, string operand2){           // op2 &
 
     // Load destination (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1581,7 +1581,7 @@ void Compiler::emitAndCode(string operand1, string operand2){           // op2 &
     }
 
     // Store result back to destination
-    emit("", "mov", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", "[" + symbolTable.at(operand2).getInternalName() + "], eax", "; store result into " + operand2);
 
     // Update A register tracking
     contentsOfAReg = operand2;
@@ -1616,7 +1616,7 @@ void Compiler::emitOrCode(string operand1, string operand2){            // op2 |
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1624,7 +1624,7 @@ void Compiler::emitOrCode(string operand1, string operand2){            // op2 |
 
     // Load destination (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1637,7 +1637,7 @@ void Compiler::emitOrCode(string operand1, string operand2){            // op2 |
     }
 
     // Store result back to destination
-    emit("", "mov", symbolTable.at(operand2).getInternalName() + ", eax", "; store result into " + operand2);
+    emit("", "mov", "[" + symbolTable.at(operand2).getInternalName() + "], eax", "; store result into " + operand2);
 
     // Update A register tracking
     contentsOfAReg = operand2;
@@ -1672,7 +1672,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
     // Spill unrelated A reg content
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
@@ -1680,7 +1680,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
 
     // Load operand2 into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1724,7 +1724,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
     symbolTable.at(dest).setDataType(BOOLEAN);
 
     // Store eax into dest internal name
-    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
 
     // Deassign/free temporaries used as operands
     if (isTemporary(operand1)) freeTemp();
@@ -1761,14 +1761,14 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1802,7 +1802,7 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -1833,14 +1833,14 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1870,7 +1870,7 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -1900,14 +1900,14 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -1937,7 +1937,7 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -1967,14 +1967,14 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -2004,7 +2004,7 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
@@ -2034,14 +2034,14 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
 
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", symbolTable.at(contentsOfAReg).getInternalName() + ", eax", "; spill A reg (" + contentsOfAReg + ")");
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
             symbolTable.at(contentsOfAReg).setAlloc(YES);
         }
         contentsOfAReg.clear();
     }
 
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, " + symbolTable.at(operand2).getInternalName(), "; load " + operand2 + " into eax");
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
         contentsOfAReg = operand2;
     }
 
@@ -2071,7 +2071,7 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
 
     string dest = getTemp();
     symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
+    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
 
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
