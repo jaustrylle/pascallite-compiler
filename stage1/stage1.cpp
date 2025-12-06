@@ -136,13 +136,9 @@ void Compiler::createListingHeader(){
     std::string timeStr = getTime();
 
     // Listing header output to listingFile, not console
-    listingFile << "STAGE1:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
-
-    listingFile << std::left << "LINE NO."
-                << std::setw(23 - std::string("LINE NO.").length()) << " "
-                << "SOURCE STATEMENT\n";
-
-    listingFile << "\n";
+    listingFile << "STAGE0:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
+    listingFile << std::left << std::setw(8) << "LINE NO." << std::setw(3) << " " << std::setw(23) << "SOURCE STATEMENT" << "\n";
+    listingFile << std::string(60, '-') << "\n";
     lineNo = 1;
 }
 
@@ -265,32 +261,27 @@ void Compiler::vars(){  // stage 0, prod 4
     }
 }
 
-void Compiler::beginEndStmt(){  // stage 0, prod 5
+void Compiler::beginEndStmt(){  // stage 1, prod 5
     // token is "begin" on entry
-    token = nextToken();        // advance to first token inside begin...end
+    token = nextToken();        // move to first token inside the block
 
-    // In Stage 1 this is where execStmts() would be invoked.
-    // For now, skip tokens until we find "end" (or EOF) while allowing nested handling later.
-    while (token != "end" && !(token.size() == 1 && token[0] == END_OF_FILE)) {
-        // If you implement execStmts later, call execStmts() here instead of skipping.
-        token = nextToken();
-    }
+    // Actually parse the executable statements now
+    execStmts();
 
+    // When execStmts returns, token should be "end" (or we complain)
     if (token != "end") {
         processError("keyword \"end\" expected");
-        // attempt to continue
     } else {
         token = nextToken();    // consume "end"
     }
 
     if (token != ".") {
         processError("period expected");
-        // attempt to continue
     } else {
         token = nextToken();    // consume '.' and advance (should be EOF)
     }
 
-    code("end", ".");
+    code("end", ".");           // emit epilogue + storage
 }
 
 void Compiler::constStmts(){    // stage 0, prod 6
@@ -1726,7 +1717,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
     // Create destination temporary to hold boolean result
     string dest = getTemp();
     // Ensure dest is boolean
-    symbolTableat(dest).setDataType(BOOLEAN);
+    symbolTable.at(dest).setDataType(BOOLEAN);
 
     // Store eax into dest internal name
     emit("", "MOV", symbolTable.at(dest).getInternalName() + ", eax", "; store comparison result into " + dest);
@@ -2277,12 +2268,13 @@ void Compiler::processError(string err){
 //////////////////// EXPANDED DURING STAGE 1
 
 void Compiler::freeTemp(){
-    // Decrement currentTempNo and ensure it does not go below -1
-    --currentTempNo;
-    if (currentTempNo < -1) {
-        processError("compiler error: currentTempNo should be >= -1");
+    // Only decrement if we actually have a temp allocated
+    if (currentTempNo > -1) {
+        --currentTempNo;
     }
+    
 }
+
 
 string Compiler::getTemp(){
     // Allocate a new temporary external name "Tn"
@@ -2318,3 +2310,4 @@ bool Compiler::isTemporary(string s) const{       // determines if s represents 
 }
 
 /////////////////////////////////////////////////////////////////////////////
+
