@@ -1451,12 +1451,13 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
     }
     if (whichType(operand1) != INTEGER) {
         processError("illegal type in negation (integer required)");
-
         return;
     }
     // Ensure value is in eax
     if (contentsOfAReg != operand1) {
-      emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", "; load " + operand1 + " into eax for negation"$);
+        // CORRECTED LINE: Ensure the string is closed, followed by ')' and ';'
+        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", 
+             "; load " + operand1 + " into eax for negation"); 
     }
 
     emit("", "neg", "eax", "; negate eax");
