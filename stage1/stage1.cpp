@@ -1405,8 +1405,7 @@ void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 
 
     // Perform idiv by divisor (operand1). IDIV only accepts a memory or register operand.
     // The previous complex immediate check is replaced by relying on the internal name.
-    emit("", "idiv", divisorEntry.getInternalName(), "; idiv by " + operand1);
-
+    emit("", "idiv", "dword [" + divisorEntry.getInternalName() + "]", "; idiv by " + operand1);
     // After IDIV, quotient is in eax. EAX now holds the new temporary result.
 
     // Free temporary operands
@@ -2137,14 +2136,10 @@ string Compiler::nextToken(){   // returns next tok or END_OF_FILE marker
             // normalize to lowercase already ensured by checks
             return token;
         }
-
+        
         // Number literal (integer)
-        if (std::isdigit(static_cast<unsigned char>(ch)) || ((ch == '+' || ch == '-') && std::isdigit(static_cast<unsigned char>(sourceFile.peek())))) {
-            // handle optional leading sign followed by digits
-            if (ch == '+' || ch == '-') {
-                token.push_back(ch);
-                ch = nextChar();
-            }
+        if (std::isdigit(static_cast<unsigned char>(ch))) {
+            // Only check for digits; '+' and '-' must be parsed as separate operators
             while (ch != END_OF_FILE && std::isdigit(static_cast<unsigned char>(ch))) {
                 token.push_back(ch);
                 ch = nextChar();
