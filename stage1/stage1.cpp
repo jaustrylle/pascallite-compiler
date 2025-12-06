@@ -1262,11 +1262,15 @@ void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 
         emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; eax += " + operand1);
     }
 
-    // D. CRITICAL FIX 2: Final Tracking Adjustment
-    // If operand2 was a Constant/Variable, EAX now holds a computed result, not the original symbol's value. Clear tracking.
+    // D. Final Tracking Adjustment (Existing Correct Code)
     if (!isTemporary(operand2)) {
         contentsOfAReg.clear();
     }
+    
+    // E. Temporary Cleanup (ADD THIS SECTION)
+    // Both operands have been consumed, so their temporaries can be freed.
+    if (isTemporary(operand1)) freeTemp();
+    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitSubtractionCode(string operand1, string operand2){       // op2 - op1
@@ -1306,16 +1310,15 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
         emit("", "sub", "eax, [" + op1Entry.getInternalName() + "]", "; eax -= " + operand1); 
     }
     
-    // D. CRITICAL FIX 2: Final Tracking Adjustment
+    // D. CRITICAL FIX 2: Final Tracking Adjustment (Existing Correct Code)
     if (!isTemporary(operand2)) {
         contentsOfAReg.clear();
     }
     
-    // E. Remove Redundant Store
-    // The result is correctly left in EAX for the calling routine to assign a temporary name.
-    
+    // E. Temporary Cleanup (SIMPLIFIED AND CORRECTED)
+    // Both operands have been consumed.
     if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2) && !isTemporary(contentsOfAReg)) freeTemp(); // Only free op2 if it's no longer tracked.
+    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitMultiplicationCode(string operand1, string operand2){      // op2 * op1
