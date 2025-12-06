@@ -1222,55 +1222,53 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
 
 // Arithmetic / logical emit implementations
 
-void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 + op1
-    // op1: right operand; op2: left operand (Accumulator)
+void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 + op1 (left + right)
     
+    // Type checking
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in addition (integers required)");
         return;
     }
 
-    // A. Register Spill Management: Only spill if contentsOfAReg is a Temporary.
+    // A. Register Spill Management: Deassign/Spill EAX if it holds a temporary *other than* op1 or op2
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
             emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", 
                  "; spill A reg (" + contentsOfAReg + ")");
         }
-        // contentsOfAReg is NOT cleared here, relying on the load logic below to handle it.
     }
 
-    const auto &op1Entry = symbolTable.at(operand1);
-    const auto &op2Entry = symbolTable.at(operand2);
+    const SymbolTableEntry &op1Entry = symbolTable.at(operand1);
+    const SymbolTableEntry &op2Entry = symbolTable.at(operand2); // Left operand (Accumulator)
 
     // B. Load Left Operand (operand2) into EAX if not already there
     if (contentsOfAReg != operand2) {
         emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " in eax");
         
-        // CRITICAL FIX: Only track if the loaded operand is a temporary.
+        // CRITICAL FIX 1: Set contentsOfAReg only if it's a Temporary. 
+        // If it's a constant/variable, the name shouldn't track the modified EAX.
         if (isTemporary(operand2)) {
             contentsOfAReg = operand2;
         } else {
-            // If we load a constant/variable, we clear tracking. The result in EAX
-            // is now an intermediate value not yet associated with a symbol name.
             contentsOfAReg.clear(); 
         }
     }
-    // If contentsOfAReg == operand2, EAX is already set.
 
-    // C. Perform Operation: Add operand1 to EAX
+    // C. Perform Operation: Add operand1 (right) to EAX
     if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
         emit("", "add", "eax, " + op1Entry.getValue(), "; eax += " + op1Entry.getValue());
     } else {
         emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; eax += " + operand1);
     }
     
-    // D. Final Tracking Adjustment (Safety for chains like (1+2)+3):
-    // After the calculation, if EAX was holding a non-temporary accumulator (constant/variable), 
-    // we must ensure it's not tracked by that name, as the value is now different.
+    // D. CRITICAL FIX 2: Final Tracking Adjustment
+    // If the original accumulator (operand2) was NOT a temporary (i.e., it was a constant/variable),
+    // we MUST clear contentsOfAReg after the calculation. The value in EAX no longer equals 
+    // the value of the symbol operand2.
     if (!isTemporary(operand2)) {
         contentsOfAReg.clear();
     }
-    // If operand2 was a Temporary, we leave contentsOfAReg as operand2 
+    // If operand2 was a Temporary, we leave contentsOfAReg as operand2 (or the value set in B) 
     // to maintain the optimization chain (e.g., T1 + T2 = T1).
 }
 
@@ -1323,26 +1321,28 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 -
     if (isTemporary(operand1)) freeTemp();
 }
 
-void Compiler::emitMultiplicationCode(string operand1, string operand2){      // op2 * op1
+void Compiler::emitMultiplicationCode(string operand1, string operand2){       // op2 * op1 (left * right)
+
+    // Type checking
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in multiplication (integers required)");
         return;
     }
-
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+    
+    // A. Register Spill Management: Spill EAX if it holds a temporary *other than* op1 or op2
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + $
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
+                 "; spill A reg (" + contentsOfAReg + ")");
         }
-        contentsOfAReg.clear();
     }
 
-// B. Load Left Operand (operand2) into EAX if not already there
+    // B. Load Left Operand (operand2) into EAX if not already there
     if (contentsOfAReg != operand2) {
-        const auto &destEntry = symbolTable.at(operand2);
+        const SymbolTableEntry &destEntry = symbolTable.at(operand2);
         emit("", "mov", "eax, [" + destEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
         
-        // CRITICAL FIX: Only track if the loaded operand is a temporary.
+        // CRITICAL FIX 1: Set contentsOfAReg only if it's a Temporary.
         if (isTemporary(operand2)) {
             contentsOfAReg = operand2;
         } else {
@@ -1350,17 +1350,19 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){      //
         }
     }
 
-    // C. Perform Operation:
-    const auto &op1Entry = symbolTable.at(operand1);
+    // C. Perform Operation: Multiply EAX by operand1
+    const SymbolTableEntry &op1Entry = symbolTable.at(operand1);
     if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
+        // Use IMUL with 2 arguments: IMUL destination, multiplier (result in destination)
         emit("", "imul", "eax, " + op1Entry.getValue(), "; eax *= " + op1Entry.getValue());
     } else {
-        emit("", "imul", op1Entry.getInternalName(), "; eax *= " + operand1);
+        // Use IMUL with 1 argument: IMUL multiplier (result in EDX:EAX)
+        // Since we are not concerned with overflow, the result is considered only in EAX.
+        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; eax *= " + operand1);
     }
 
-    // D. Final Tracking Adjustment:
-    // After the calculation, if EAX was holding a non-temporary accumulator (constant/variable), 
-    // we must ensure it's not tracked by that name.
+    // D. CRITICAL FIX 2: Final Tracking Adjustment
+    // If the original accumulator (operand2) was NOT a temporary, we MUST clear contentsOfAReg.
     if (!isTemporary(operand2)) {
         contentsOfAReg.clear();
     }
