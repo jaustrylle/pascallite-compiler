@@ -1104,10 +1104,10 @@ void Compiler::emitReadCode(string operand, string /*operand2*/){
     }
 
     // Call the runtime ReadInt routine (assumes it returns value in eax)
-    emit("", "CALL", "ReadInt", "; read into eax");
+    emit("", "call", "ReadInt", "; read int; value placed in eax");
 
     // Store eax into the variable's storage (use internal name)
-    emit("", "MOV", entry.getInternalName() + ", eax", "; store read value into " + name);
+    emit("", "mov", entry.getInternalName() + ", eax", "; store eax at " + name);
 
     // Track that A register (eax) no longer holds a useful named value;
     // but per the spec we set contentsOfAReg to the variable that now contains the value
