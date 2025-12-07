@@ -88,6 +88,24 @@ bool isIntegerLiteral(std::string s) {
     return hasDigit;
 }
 
+//////////////////// EXPANDED IN STAGE 1
+
+namespace {
+    void allocateTempStorage(Compiler &compiler, const std::string &temp, storeTypes type = INTEGER) {
+        if (temp.empty()) return;
+        auto &symbolTable = compiler.symbolTable; // assuming symbolTable is accessible
+        if (!symbolTable.count(temp)) {
+            compiler.insert(temp, type, VARIABLE, "", YES, 1);
+            return;
+        }
+        SymbolTableEntry &entry = symbolTable.at(temp);
+        entry.setDataType(type);
+        entry.setMode(VARIABLE);
+        entry.setAlloc(YES);
+        if (entry.getInternalName().empty()) entry.setInternalName(temp);
+    }
+}
+
 /////////////////////////////////////////////////////////////////////////////
 
 /* ------------------------------------------------------
@@ -2196,13 +2214,13 @@ void Compiler::processError(string err){
 
 //////////////////// EXPANDED DURING STAGE 1
 
-// 1) Free a specific temp (mark alloc NO or remove)
-void Compiler::freeTemp(const string &temp) {
-    if (temp.empty()) return;
-    auto it = symbolTable.find(temp);
+// Free the last temporary (or the one currently in contentsOfAReg)
+void Compiler::freeTemp() {
+    if (contentsOfAReg.empty()) return;
+    auto it = symbolTable.find(contentsOfAReg);
     if (it == symbolTable.end()) return;
-    it->second.setAlloc(NO);
-    // optionally erase or push to free-list for reuse
+    it->second.setAlloc(NO);  // mark as free
+    contentsOfAReg.clear();   // clear A reg tracking
 }
 
 // 2) Create temp name (no allocation of storage)
@@ -2221,22 +2239,6 @@ string Compiler::getTemp() {
     return temp;
 }
 
-// 3) Allocate storage for a temp only when needed
-void Compiler::allocateTempStorage(const string &temp, storeTypes type = INTEGER) {
-    if (temp.empty()) return;
-    if (!symbolTable.count(temp)) {
-        insert(temp, type, VARIABLE, "", YES, 1);
-        return;
-    }
-    SymbolTableEntry &entry = symbolTable.at(temp);
-    entry.setDataType(type);
-    entry.setMode(VARIABLE);
-    entry.setAlloc(YES);
-    if (entry.getInternalName().empty()) {
-        entry.setInternalName(temp); // or generate a distinct internal label if you prefer
-    }
-}
-
 string Compiler::getLabel(){
     static int labelNo = 0;
     std::ostringstream oss;
@@ -2244,8 +2246,7 @@ string Compiler::getLabel(){
     return oss.str();
 }
 
-// 4) Pure predicate: no side effects, returns bool
-bool Compiler::isTemporary(const string &s) const {
+bool Compiler::isTemporary(string s) const {
     if (s.size() < 2) return false;
     if (s[0] != 'T') return false;
     for (size_t i = 1; i < s.size(); ++i) {
