@@ -2128,29 +2128,45 @@ void Compiler::processError(string err){
 
 //////////////////// EXPANDED DURING STAGE 1
 
-void Compiler::freeTemp(){
-    // Only decrement if we actually have a temp allocated
-    if (currentTempNo > -1) {
-        --currentTempNo;
-    }
-    
+// 1) Free a specific temp (mark alloc NO or remove)
+void Compiler::freeTemp(const string &temp) {
+    if (temp.empty()) return;
+    auto it = symbolTable.find(temp);
+    if (it == symbolTable.end()) return;
+    it->second.setAlloc(NO);
+    // optionally erase or push to free-list for reuse
 }
 
-string Compiler::getTemp(){
-    // Allocate a new temporary external name "Tn"
+// 2) Create temp name (no allocation of storage)
+string Compiler::getTemp() {
     ++currentTempNo;
-    if (currentTempNo > maxTempNo) {
-        maxTempNo = currentTempNo;
-    }
-    std::string temp = "T" + std::to_string(currentTempNo);
-
-    // If this temp is new, insert into symbol table as an INTEGER variable by default.
-    // (Type may be adjusted later by code generation routines.)
+    if (currentTempNo > maxTempNo) maxTempNo = currentTempNo;
+    string temp = "T" + std::to_string(currentTempNo);
+    // Insert placeholder if desired, but mark alloc == NO so it won't appear in .data/.bss
     if (symbolTable.count(temp) == 0) {
-        insert(temp, INTEGER, VARIABLE, "", YES, 1);
+        insert(temp, INTEGER, VARIABLE, "", NO, 1); // alloc == NO
+    } else {
+        symbolTable.at(temp).setDataType(INTEGER);
+        symbolTable.at(temp).setMode(VARIABLE);
+        symbolTable.at(temp).setAlloc(NO);
     }
-
     return temp;
+}
+
+// 3) Allocate storage for a temp only when needed
+void Compiler::allocateTempStorage(const string &temp, storeTypes type = INTEGER) {
+    if (temp.empty()) return;
+    if (!symbolTable.count(temp)) {
+        insert(temp, type, VARIABLE, "", YES, 1);
+        return;
+    }
+    SymbolTableEntry &entry = symbolTable.at(temp);
+    entry.setDataType(type);
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) {
+        entry.setInternalName(temp); // or generate a distinct internal label if you prefer
+    }
 }
 
 string Compiler::getLabel(){
@@ -2160,7 +2176,8 @@ string Compiler::getLabel(){
     return oss.str();
 }
 
-bool Compiler::isTemporary(string s) const{       // determines if s represents a temporary
+// 4) Pure predicate: no side effects, returns bool
+bool Compiler::isTemporary(const string &s) const {
     if (s.size() < 2) return false;
     if (s[0] != 'T') return false;
     for (size_t i = 1; i < s.size(); ++i) {
