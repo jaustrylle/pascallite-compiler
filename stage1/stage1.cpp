@@ -24,6 +24,21 @@ stage1.cpp
 
 /////////////////////////////////////////////////////////////////////////////
 
+// ensureOperand macro
+#define ensureOperand(name) \
+    ([&]() -> std::string { \
+        const std::string &_n = (name); \
+        if (_n.empty()) return std::string(); \
+        if (symbolTable.count(_n)) return _n; \
+        if (isInteger(_n) || isBoolean(_n) || isLiteral(_n)) { \
+            storeTypes _t = whichType(_n); \
+            insert(_n, _t, CONSTANT, _n, YES, 1); \
+            return _n; \
+        } \
+        processError(std::string("reference to undefined symbol: ") + _n); \
+        return std::string(); \
+    }())
+
 // --- Global State Definitions ---
 // Missing private members in Compiler class
 static std::set<std::string> keywords;
@@ -34,8 +49,7 @@ static bool begChar = true;
 
 // String rep of END_OF_FILE char
 const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE);
-std::vector<std::string> tempStack;   // LIFO list of temps created by getTemp()
-std::string ensureOperand(const std::string &name);
+static std::vector<std::string> tempStack;   // LIFO list of temps created by getTemp()
 
 /////////////////////////////////////////////////////////////////////////////
 
