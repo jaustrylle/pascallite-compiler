@@ -761,19 +761,15 @@ void Compiler::factor(){         // stage 1, prod 13
 }
 
 void Compiler::factors() {
-    // FACTORS -> MULT_LEV_OP PART FACTORS | Epsilon
-    // contains loop for *, div, mod, and
-    // must have multiplicative loop
-
     // Loop: Handle subsequent multiplications, divisions, and logical ANDs
     while (token == "*" || token == "div" || token == "mod" || token == "and") {
         std::string op = token;
         token = nextToken();
         
-        part(); // The right operand (RHS)
+        part(); // Parse the right operand (RHS). Pushes RHS name onto operandStk.
         
-        std::string right = popOperand();
-        std::string left = popOperand();
+        std::string right = popOperand(); // RHS (e.g., "5")
+        std::string left = popOperand();  // LHS (e.g., "3" or "T0")
         
         // Error Handling
         if (left.empty() || right.empty()) {
@@ -781,20 +777,65 @@ void Compiler::factors() {
             return;
         }
         
-        // Dispatch to appropriate multiplicative emitter...
-        if (op == "*") {
-            emitMultiplicationCode(right, left);
-        } else if (op == "/") {
-            emitDivisionCode(right, left);  
-        } else if (op == "%") {
-            emitModuloCode(right, left);
-        } else if (op == "and" || op == "&&") {
-            emitAndCode(right, left);
+        // ---------------------------------------------------------------
+        // 1. ENSURE LHS IS IN EAX (Pre-Load for EAX Chaining)
+        // ---------------------------------------------------------------
+        // The LHS MUST be in EAX for the emitter to work. 
+        if (contentsOfAReg != left) {
+            // Load the value of the LHS operand from memory into EAX
+            emit("", "mov", "eax, [" + symbolTable.at(left).getInternalName() + "]", "; Load LHS (" + left + ") into EAX");
+            contentsOfAReg = left; // EAX now holds the value of 'left'
         }
         
-    // Cleanup (EAX Chaining)
-        if (isTemporary(right)) freeTemp();
-        pushOperand(left);
+        // ---------------------------------------------------------------
+        // 2. DISPATCH TO EMITTER (EAX = LHS op RHS)
+        // ---------------------------------------------------------------
+        if (op == "*") {
+            // The emitter must load the RHS if it's not a constant and then perform imul
+            emitMultiplicationCode(right, left); 
+        } else if (op == "div") {
+            emitDivisionCode(right, left);  
+        } else if (op == "mod") {
+            emitModuloCode(right, left);
+        } else if (op == "and") {
+            emitAndCode(right, left);
+        }
+        // Note: The Emitter is responsible for freeing the 'right' temporary if needed.
+        
+        // ---------------------------------------------------------------
+        // 3. RESULT MANAGEMENT (Temporary Generation for New Result)
+        // ---------------------------------------------------------------
+        std::string resultName = left;
+        
+        // If the original LHS was NOT a temporary (i.e., it was a constant or variable), 
+        // we must save the new result from EAX to a NEW temporary location.
+        if (!isTemporary(left)) {
+            // Get a NEW symbol name (e.g., "T1")
+            resultName = getTemp(); 
+            
+            // Save the calculated EAX result into the new temporary's memory
+            emit("", "mov", "[" + symbolTable.at(resultName).getInternalName() + "], eax", "; Save result to new temp " + resultName);
+            
+            // Update AReg tracking
+            contentsOfAReg = resultName;
+        } else {
+            // If it was already a temporary ("T0"), its name is still valid for tracking the result in EAX
+            // We just update the tracker to reflect the successful operation.
+            contentsOfAReg = left;
+            // The name 'left' is reused, but the old temporary memory is now overwritten.
+        }
+        
+        // 4. CLEANUP AND CONTINUE
+        // We only free the RHS temporary here if it hasn't been freed by the emitter (less common).
+        // Since emitMultiplicationCode should free the RHS, we only need to push the result.
+        
+        // If LHS was an old temporary, we free it here, as its name is replaced by resultName (if resultName != left)
+        if (isTemporary(left) && resultName != left) {
+             freeTemp(); // This might be required if getTemp uses a complex pool
+        }
+
+        // Push the name tracking the new result (e.g., "T1") back onto the stack
+        pushOperand(resultName);
     }
 }
 
@@ -1395,11 +1436,6 @@ void Compiler::emitAdditionCode(string operand1, string operand2){
         emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " + " + op1Entry.getValue());
     }
 
-    // 2. Clear AReg tracking if LHS was a user variable (since EAX value is now modified)
-    if (!isTemporary(operand2)) {
-        contentsOfAReg.clear();
-    }
-    
     // 3. Free the RHS temporary
     if (isTemporary(operand1)) freeTemp();
     
@@ -1436,11 +1472,6 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
     } else {
         // Must reference memory for SUB
         emit("", "sub", "eax, [" + op1Entry.getInternalName() + "]", "; eax -= " + operand1); 
-    }
-    
-    // D. Final Tracking Adjustment
-    if (!isTemporary(operand2)) {
-        contentsOfAReg.clear();
     }
     
     // E. Temporary Cleanup
@@ -1480,12 +1511,6 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){       /
         emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " * " + operand1);
     }
     
-    // D. Final Tracking Adjustment (Logic is fine after B is fixed)
-    if (!isTemporary(operand2)) {
-        // EAX has been modified and no longer holds the clean value of a non-temporary variable/constant.
-        contentsOfAReg.clear(); 
-    }
-    
     // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
 }
@@ -1521,9 +1546,6 @@ void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 
     // D. Perform IDIV (Quotient in EAX, Remainder in EDX)
     // FIX: Use op1Entry instead of the undefined divisorEntry
     emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
-
-    // E. Track quotient in EAX (but this is temporary—we convert to a true temp next)
-    contentsOfAReg = operand2;
 
     if (isTemporary(operand1)) freeTemp();
 }
@@ -1562,9 +1584,6 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 
     // E. Move remainder (EDX) into EAX (the accumulator for the result)
     emit("", "mov", "eax, edx", "; move remainder (edx) to accumulator (eax)");
-
-    // F. Final Tracking: EAX now holds the remainder
-    contentsOfAReg = operand2;
     
     // G. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
@@ -1602,22 +1621,8 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
     // B. Perform negation
     emit("", "neg", "eax", "; negate eax");
 
-    // === C. Create result temp ===
-    string tmp = getTemp();
-
-    // allocate temp storage
-    SymbolTableEntry &entry = symbolTable.at(tmp);
-    entry.setDataType(INTEGER);   // or BOOLEAN
-    entry.setMode(VARIABLE);
-    entry.setAlloc(YES);
-    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
-
-    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
-         "; store negated value into " + tmp);
-
-    // D. Push result
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
+    // C. Temporary Cleanup (If the source operand was a temporary, free it)
+    if (isTemporary(operand1)) freeTemp();
 }
 
 void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !op1, UNARY
@@ -1648,22 +1653,8 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !
     // B. Perform NOT
     emit("", "not", "eax", "; bitwise not eax");
 
-    // === C. Create result temp ===
-    string tmp = getTemp();
-
-    // allocate temp storage
-    SymbolTableEntry &entry = symbolTable.at(tmp);
-    entry.setDataType(BOOLEAN);
-    entry.setMode(VARIABLE);
-    entry.setAlloc(YES);
-    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
-
-    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
-         "; store boolean not into " + tmp);
-
-    // D. Push result
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
+    // C. Temporary Cleanup (If the source operand was a temporary, free it)
+    if (isTemporary(operand1)) freeTemp();
 }
 
 void Compiler::emitAndCode(string operand1, string operand2){            // op2 && op1
@@ -1696,26 +1687,8 @@ void Compiler::emitAndCode(string operand1, string operand2){            // op2 
              "; eax &= " + operand1);
     }
 
-    // D. Tracking adjustment
-    if (!isTemporary(operand2)) contentsOfAReg.clear();
-
+    // D. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-
-    // === E. RESULT TEMP ===
-    string tmp = getTemp();
-
-    // allocate temp storage
-    SymbolTableEntry &entry = symbolTable.at(tmp);
-    entry.setDataType(INTEGER);   // or BOOLEAN
-    entry.setMode(VARIABLE);
-    entry.setAlloc(YES);
-    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
-
-    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
-         "; store boolean result into " + tmp);
-
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
 }
 
 void Compiler::emitOrCode(string operand1, string operand2){             // op2 || op1
@@ -1748,31 +1721,16 @@ void Compiler::emitOrCode(string operand1, string operand2){             // op2 
              "; eax |= " + operand1);
     }
 
-    // D. Tracking adjustment
-    if (!isTemporary(operand2)) contentsOfAReg.clear();
-
+    // D. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-
-    // === E. RESULT TEMP ===
-    string tmp = getTemp();
-
-    // allocate temp storage
-    SymbolTableEntry &entry = symbolTable.at(tmp);
-    entry.setDataType(INTEGER);   // or BOOLEAN
-    entry.setMode(VARIABLE);
-    entry.setAlloc(YES);
-    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
-
-    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
-         "; store boolean result into " + tmp);
-
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
 }
 
 // ------------------------------------------------------
 // COMPARISON OPERATORS (ensure contentsOfAReg is cleared after result)
 // ------------------------------------------------------
+//// These must ensure the LHS (op2) is loaded into EAX before cmp instructions
+//// Loading logic belongs in calling parser function, not in emitters
+//// Emitters here assume EAX holds op2 for LHS, only compares with op1 for RHS
 
 void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 == op1
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1795,6 +1753,8 @@ void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 
         contentsOfAReg.clear();
     }
 
+    // Parser MUST ensure EAX = operand2 here!
+    
     // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
@@ -1815,7 +1775,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 
 
     // EAX now holds the boolean result. contentsOfAReg MUST remain clear 
     // until the calling expression routine assigns a new temporary name.
-
+    // Deassign/free temporaries (Correct for comparison)
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
 }
@@ -1841,6 +1801,9 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
         contentsOfAReg.clear();
     }
 
+    // emitEqualityCode and emitInequalityCode must ensure LHS is loaded into EAX before cmp instruction
+    // Parser so far does this
+    
     // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
@@ -1891,17 +1854,6 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
         }
         emit("", "mov", "[" + entry.getInternalName() + "], eax",
              "; spill A reg (" + contentsOfAReg + ")");
-        contentsOfAReg.clear();
-    }
-
-
-    if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " in eax");
-        // Don't track here, as the result (0 or -1) will immediately overwrite it.
-        contentsOfAReg.clear();
-    } else {
-        // If contentsOfAReg == operand2, we still need to clear it after the comparison,
-        // because EAX will be overwritten with the boolean result (0 or -1).
         contentsOfAReg.clear();
     }
 
