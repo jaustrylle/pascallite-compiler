@@ -642,19 +642,16 @@ void Compiler::expresses(){      // stage 1, prod 10
             processError("unknown additive/logical operator: " + op);
         }
 
-        // --- NEW CORRECT LOGIC START ---
-        // 1. EAX holds the result. Save it to a new temporary.
-        std::string dest = getTemp();
-        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
-
-        // 2. Free both operand temporaries, as they are now consumed.
+        // --- OPTIMIZED STAGE 1 LOGIC (for in-register accumulation) ---
+        // 1. The accumulated result is in EAX.
+        
+        // 2. Free the right operand temporary if necessary, as it is consumed.
         if (isTemporary(right)) freeTemp();
-        if (isTemporary(left)) freeTemp();
 
-        // 3. Update A register tracking and push the result (the new temporary)
-        contentsOfAReg = dest;
-        pushOperand(dest);
-        // --- NEW CORRECT LOGIC END ---
+        // 3. Push the left operand's name back onto the stack to represent the new result.
+        // The value in EAX is now associated with the name 'left'.
+        pushOperand(left);
+        // --- END OPTIMIZED LOGIC ---
     }
 }
 
@@ -693,19 +690,16 @@ void Compiler::terms(){          // stage 1, prod 12
             processError("unknown multiplicative/logical operator: " + op);
         }
 
-        // --- NEW CORRECT LOGIC START ---
-        // 1. EAX holds the result. Save it to a new temporary.
-        std::string dest = getTemp();
-        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
-
-        // 2. Free both operand temporaries, as they are now consumed.
+        // --- OPTIMIZED STAGE 1 LOGIC (for in-register accumulation) ---
+        // 1. The accumulated result is in EAX.
+        
+        // 2. Free the right operand temporary if necessary, as it is consumed.
         if (isTemporary(right)) freeTemp();
-        if (isTemporary(left)) freeTemp();
 
-        // 3. Update A register tracking and push the result (the new temporary)
-        contentsOfAReg = dest;
-        pushOperand(dest);
-        // --- NEW CORRECT LOGIC END ---
+        // 3. Push the left operand's name back onto the stack to represent the new result.
+        // The value in EAX is now associated with the name 'left'.
+        pushOperand(left);
+        // --- END OPTIMIZED LOGIC ---
     }
 }
 
@@ -1262,21 +1256,24 @@ void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 
     }
 
     // C. Perform Operation: Add operand1 to EAX
-    if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
+    
+    // Check if operand1 (right) is a constant *without* a memory label (transient immediate).
+    // Note: If op1Entry.getInternalName() is NOT empty (like "I6"), it must be loaded from memory.
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
         emit("", "add", "eax, " + op1Entry.getValue(), "; eax += " + op1Entry.getValue());
     } else {
+        // Use memory access for all other cases (variables, temporaries, and constants with I# labels)
         emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; eax += " + operand1);
     }
 
-    // D. Final Tracking Adjustment (Existing Correct Code)
+    // D. Final Tracking Adjustment (remains the same)
     if (!isTemporary(operand2)) {
         contentsOfAReg.clear();
     }
     
-    // E. Temporary Cleanup (ADD THIS SECTION)
-    // Both operands have been consumed, so their temporaries can be freed.
+    // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
+    // Do NOT free operand2 here, as its name is being reused by the parser for the new result in EAX.
 }
 
 void Compiler::emitSubtractionCode(string operand1, string operand2){       // op2 - op1
@@ -1309,7 +1306,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
     }
 
     // C. Perform Operation
-    if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
         emit("", "sub", "eax, " + op1Entry.getValue(), "; eax -= " + op1Entry.getValue());
     } else {
         // Must reference memory for SUB
@@ -1321,10 +1318,9 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
         contentsOfAReg.clear();
     }
     
-    // E. Temporary Cleanup (SIMPLIFIED AND CORRECTED)
-    // Both operands have been consumed.
+    // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
+    // Do NOT free operand2 here, as its name is being reused by the parser for the new result in EAX.
 }
 
 void Compiler::emitMultiplicationCode(string operand1, string operand2){      // op2 * op1
@@ -1357,7 +1353,7 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){      //
     }
 
     // C. Perform Operation
-    if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
         // Two-operand IMUL: IMUL destination, multiplier (result in destination)
         emit("", "imul", "eax, " + op1Entry.getValue(), "; eax *= " + op1Entry.getValue());
     } else {
@@ -1369,15 +1365,22 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){      //
     if (!isTemporary(operand2)) {
         contentsOfAReg.clear();
     }
+    
+    // E. Temporary Cleanup
+    if (isTemporary(operand1)) freeTemp();
 }
 
 void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 / op1
+    // (op1Entry is the divisor, op2Entry is the dividend)
+    const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2);
+    
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in division (integers required)");
         return;
     }
 
-    // A. Spill unrelated A reg content
+    // A. Spill unrelated A reg content (Keep as is)
     if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
         if (symbolTable.count(contentsOfAReg)) {
             emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
@@ -1386,36 +1389,40 @@ void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 
         contentsOfAReg.clear();
     }
 
-    const auto &divisorEntry = symbolTable.at(operand1);
-    const auto &dividendEntry = symbolTable.at(operand2);
-
     // B. Load dividend (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + dividendEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
-        // IDIV clobbers EAX/EDX, so EAX content tracking MUST be cleared after the operation,
-        // but can be set to operand2 here for possible optimization if the *next* operation uses op2.
+        // FIX: Use op2Entry instead of the undefined dividendEntry
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
         contentsOfAReg = operand2; 
     }
 
-    // C. Sign-extend eax into edx:eax and perform IDIV
-    emit("", "cdq", "", "; sign-extend eax into edx:eax");
-    emit("", "idiv", "dword [" + divisorEntry.getInternalName() + "]", "; idiv by " + operand1);
+    // C. Sign-extend eax into edx:eax
+    emit("", "cdq", "", "; sign-extend eax into edx:eax for division");
+    contentsOfAReg.clear(); // EAX/EDX contents are now computed, clear tracking
 
-    // D. Final Tracking: After IDIV, EAX holds the new quotient. The previous tracking is now invalid.
-    contentsOfAReg.clear(); // EAX holds a new, untracked value (the quotient)
+    // D. Perform IDIV (Quotient in EAX, Remainder in EDX)
+    // FIX: Use op1Entry instead of the undefined divisorEntry
+    emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
 
-    // Free temporary operands (Your original code had this, so keep it)
+    // E. Final Tracking Adjustment
+    // EAX now holds the quotient, which is the result. Track it using the left operand's name.
+    contentsOfAReg = operand2; 
+    
+    // F. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitModuloCode(string operand1, string operand2){        // op2 % op1
+    // (op1Entry is the divisor, op2Entry is the dividend)
+    const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2);
+    
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in modulo (integers required)");
         return;
     }
 
-    // A. Spill unrelated A reg content
+    // A. Spill unrelated A reg content (Keep as is)
     if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
         if (symbolTable.count(contentsOfAReg)) {
             emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
@@ -1424,28 +1431,29 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
         contentsOfAReg.clear();
     }
 
-    const auto &divisorEntry = symbolTable.at(operand1);
-    const auto &dividendEntry = symbolTable.at(operand2);
-
     // B. Load dividend (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + dividendEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
+        // FIX: Use op2Entry instead of the undefined dividendEntry
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
         contentsOfAReg = operand2; 
     }
 
-    // C. Sign-extend eax into edx:eax and perform IDIV
+    // C. Sign-extend eax into edx:eax
     emit("", "cdq", "", "; sign-extend eax into edx:eax for idiv");
-    emit("", "idiv", "dword [" + divisorEntry.getInternalName() + "]", "; idiv by " + operand1);
+    contentsOfAReg.clear(); // EAX/EDX contents are now computed, clear tracking
 
-    // D. Move remainder (EDX) into EAX (the accumulator for the result)
+    // D. Perform IDIV (Quotient in EAX, Remainder in EDX)
+    // FIX: Use op1Entry instead of the undefined divisorEntry
+    emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
+
+    // E. Move remainder (EDX) into EAX (the accumulator for the result)
     emit("", "mov", "eax, edx", "; move remainder (edx) to accumulator (eax)");
 
-    // E. Final Tracking: EAX holds the new remainder value. Clear tracking.
-    contentsOfAReg.clear();
-
-    // Free temporary operands
+    // F. Final Tracking: EAX now holds the remainder. Track it using the left operand's name.
+    contentsOfAReg = operand2; 
+    
+    // G. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 // ------------------------------------------------------
