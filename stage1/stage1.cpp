@@ -1232,12 +1232,18 @@ void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 
     }
 
     // A. Register Spill Management: Spill temporaries unrelated to the current operation.
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
-                 "; spill A reg (" + contentsOfAReg + ")");
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-        contentsOfAReg.clear(); 
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
+        contentsOfAReg.clear();
     }
 
     const auto &op1Entry = symbolTable.at(operand1);
@@ -1302,13 +1308,20 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
     }
 
     // A. Spill management (same as addition, but ensure `contentsOfAReg.clear()` is called after spill)
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
-    
+
     const auto &op1Entry = symbolTable.at(operand1);
     const auto &op2Entry = symbolTable.at(operand2); 
 
@@ -1368,10 +1381,17 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){      //
     }
 
     // A. Register Spill Management
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -1419,11 +1439,17 @@ void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 
     }
 
     // A. Spill unrelated A reg content (Keep as is)
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -1479,11 +1505,17 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
     }
 
     // A. Spill unrelated A reg content (Keep as is)
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -1545,6 +1577,21 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
         return;
     }
 
+    // spill unrelated
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
+        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
+        contentsOfAReg.clear();
+    }
+
     // A. Load operand into EAX if needed
     if (contentsOfAReg != operand1) {
         emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]",
@@ -1582,6 +1629,21 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !
         return;
     }
 
+    // spill unrelated
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
+        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
+        contentsOfAReg.clear();
+    }
+
     // A. Load operand into EAX if needed
     if (contentsOfAReg != operand1) {
         emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]",
@@ -1616,9 +1678,16 @@ void Compiler::emitAndCode(string operand1, string operand2){            // op2 
     }
 
     // A. Spill
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) &&
-        contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
+        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1669,9 +1738,16 @@ void Compiler::emitOrCode(string operand1, string operand2){             // op2 
     }
 
     // A. Spill
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) &&
-        contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
+        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1725,11 +1801,17 @@ void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 
         }
     
     // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -1776,11 +1858,17 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
         }
 
     // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -1834,11 +1922,17 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
         }
 
     // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -1899,11 +1993,17 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
         }
 
     // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -1954,11 +2054,17 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
         }
 
     // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
@@ -2010,11 +2116,17 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
         }
 
     // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
