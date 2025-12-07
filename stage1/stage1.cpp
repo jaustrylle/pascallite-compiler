@@ -628,57 +628,61 @@ void Compiler::express(){       // stage 1, prod 9
     expresses();    // handles REL_OP
 }
 
-void Compiler::expresses(){      // stage 1, prod 10
-    // handles REL_OP
+void Compiler::expresses(){    // handles REL_OP, stage 1, prod 10 (comparison emitter handling)
     if (token == "=" || token == "<>" || token == "<=" || token == ">=" || token == "<" || token == ">") {
-            std::string op = token;
-            token = nextToken(); // consume REL_OP
-            
-            term(); // Parse the RHS expression
-    
-            std::string right = popOperand();
-            std::string left = popOperand();
-
-            // Dispatch to appropriate multiplicative emitter...
-            if (op == "*") {
-                emitMultiplicationCode(right, left);
-            } else if (op == "div") {
-                emitDivisionCode(right, left);
-            } else if (op == "mod") {
-                emitModuloCode(right, left);
-            } else if (op == "and" || op == "&&") {
-                emitAndCode(right, left);
-            }
-                // Otherwise, epsilon reduction
-
-            // Cleanup (EAX Chaining)
-            if (isTemporary(right)) freeTemp();
-            pushOperand(left);
+        std::string op = token;
+        token = nextToken(); // consume REL_OP
+        term(); // Parse the RHS expression (which leaves its name on the stack)
+        std::string right = popOperand();
+        std::string left = popOperand();
+        
+        // ---------------------------------------------------------------
+        // 1. ENSURE LHS IS IN EAX (Pre-Load for EAX Chaining)
+        // ---------------------------------------------------------------
+        
+        if (contentsOfAReg != left) {
+            emit("", "mov", "eax, [" + symbolTable.at(left).getInternalName() + "]", "; Load LHS (" + left + ") into EAX for comparison");
+            // Note: Don't track here, as EAX is immediately overwritten by the boolean result.
         }
+        
+        // Clear contentsOfAReg regardless, as EAX is about to be overwritten by 0 or -1.
+            contentsOfAReg.clear();
+        
+        // ---------------------------------------------------------------
+        // 2. DISPATCH TO COMPARISON EMITTER (EAX = LHS op RHS)
+        // ---------------------------------------------------------------
+        if (op == "=") {
+            emitEqualityCode(right, left);
+        } else if (op == "<>") {
+            emitInequalityCode(right, left);
+        } else if (op == "<") {
+            emitLessThanCode(right, left);
+        } else if (op == ">") {
+            emitGreaterThanCode(right, left);
+        } else if (op == "<=") {
+            emitLessThanOrEqualToCode(right, left);
+        } else if (op == ">=") {
+            emitGreaterThanOrEqualToCode(right, left);
+        }
+        
+        // Emitters handle freeing temps for both left and right.
+        
+        // ---------------------------------------------------------------
+        // 3. RESULT MANAGEMENT (Create new temp for Boolean result)
+        // ---------------------------------------------------------------
+        std::string resultName = getTemp();
+        // Save the boolean result (0 or -1) from EAX into the new temporary's memory
+        emit("", "mov", "[" + symbolTable.at(resultName).getInternalName() + "], eax", "; Save boolean result to " + resultName);
+        
+        // Update AReg tracking and push the result
+        contentsOfAReg = resultName;
+        pushOperand(resultName);
     }
+}
 
 void Compiler::term(){        // stage 1, prod 11
     // term -> factor terms
     factor();    // parses MULT_LEVEL_OP
-
-    // ENSURES FIRST OPERAND IS LOADED INTO EAX
-    std::string firstOperand = popOperand(); // Pop the name of the first factor (e.g., "3")
-
-    // Only load if EAX does not already contain this value (EAX Chaining)
-    if (contentsOfAReg != firstOperand) {
-        // Retrieve the symbol table entry to get the internal memory name (I5)
-        const auto &entry = symbolTable.at(firstOperand); 
-        
-        // Emit the load instruction
-        emit("", "mov", "eax, [" + entry.getInternalName() + "]", 
-             "; load " + firstOperand + " in eax for additive chain LHS");
-        
-        // Track EAX contents
-        contentsOfAReg = firstOperand;
-    }
-    
-    // Push the operand back onto the stack so terms() can use it as the LHS
-    pushOperand(firstOperand);
     
     // Now, handle the rest of the terms (the additive loop)
     terms();    // handles ADD_LEVEL_OP
@@ -692,8 +696,20 @@ void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
         
         std::string right = popOperand();
         std::string left = popOperand();
-        
-        // Dispatch to appropriate additive emitter... (Your code for this block is correct)
+
+        // ---------------------------------------------------------------
+        // 1. ENSURE LHS IS IN EAX (Pre-Load for EAX Chaining)
+        // Note: term() should have done the initial load, but we re-check here.
+        // ---------------------------------------------------------------
+        if (contentsOfAReg != left) {
+            // Load the value of the LHS operand from memory into EAX
+            emit("", "mov", "eax, [" + symbolTable.at(left).getInternalName() + "]", "; Load LHS (" + left + ") into EAX");
+            contentsOfAReg = left;
+        }
+            
+        // ---------------------------------------------------------------
+        // 2. DISPATCH TO EMITTER (EAX = LHS op RHS)
+        // ---------------------------------------------------------------
         if (op == "+") {
             emitAdditionCode(right, left);
         } else if (op == "-") {
@@ -701,10 +717,29 @@ void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
         } else if (op == "or") {
             emitOrCode(right, left);
         }
-
-        // Cleanup (EAX Chaining)
-        if (isTemporary(right)) freeTemp();
-        pushOperand(left);
+        // Note: Emitter handles freeing 'right' temp.
+        
+        // ---------------------------------------------------------------
+        // 3. RESULT MANAGEMENT (Temporary Generation for New Result)
+        // ---------------------------------------------------------------
+        std::string resultName = left;
+        if (!isTemporary(left)) {
+            // Create and save to new temporary
+            resultName = getTemp();
+            emit("", "mov", "[" + symbolTable.at(resultName).getInternalName() + "], eax", "; Save result to new temp " + resultName);
+            contentsOfAReg = resultName;
+        } else {
+            // Reuse old temporary name
+            contentsOfAReg = left;
+        }
+        
+        // 4. CLEANUP AND CONTINUE
+        // If LHS was an old temporary, and we replaced it with a new name, free the old temp.
+        if (isTemporary(left) && resultName != left) {
+            freeTemp();
+        }
+            // Push the name tracking the new result back onto the stack
+            pushOperand(resultName);
     }
 }
 
