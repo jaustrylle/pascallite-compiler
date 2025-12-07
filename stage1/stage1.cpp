@@ -36,6 +36,7 @@ static bool begChar = true;
 const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE);
 
 /////////////////////////////////////////////////////////////////////////////
+
 // --- Global Helper Function Implementations ---
 
 std::string getTime() {
@@ -615,7 +616,7 @@ void Compiler::express(){       // stage 1, prod 9
     // After reduction, top of operand stack holds the expression result
 }
 
-void Compiler::expresses(){     // stage 1, prod 10
+void Compiler::expresses(){      // stage 1, prod 10
     // handles additive and logical-or operators: +, -, or
     while (token == "+" || token == "-" || token == "or" || token == "||") {
         std::string op = token;
@@ -627,35 +628,31 @@ void Compiler::expresses(){     // stage 1, prod 10
         std::string left  = popOperand();
 
         if (left.empty() || right.empty()) {
-            processError("operand missing for binary operator");
-            // push back what we have and return
-            if (!left.empty()) pushOperand(left);
-            if (!right.empty()) pushOperand(right);
+            // ... (error handling) ... GOES HERE!!!!!
             return;
         }
 
-        // Create destination temporary and compute dest = left op right
-        std::string dest = getTemp();
-        // Copy left into dest
-        emitAssignCode(left, dest);
-
-        // Apply operator using dest as left operand
+    // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
         if (op == "+") {
-            emitAdditionCode(right, dest);
+            emitAdditionCode(right, left); // NOTE: Corrected argument order for (op1, op2) where op2 is accumulator
         } else if (op == "-") {
-            emitSubtractionCode(right, dest);
+            emitSubtractionCode(right, left); // NOTE: Corrected argument order
         } else if (op == "or" || op == "||") {
-            emitOrCode(right, dest);
+            emitOrCode(right, left); // NOTE: Corrected argument order
         } else {
             processError("unknown additive/logical operator: " + op);
         }
 
-        // Free temporaries used for left/right if they were temps
-        if (isTemporary(left)) freeTemp();
+        // --- OPTIMIZED STAGE 1 LOGIC (for in-register accumulation) ---
+        // 1. The accumulated result is in EAX.
+        
+        // 2. Free the right operand temporary if necessary, as it is consumed.
         if (isTemporary(right)) freeTemp();
 
-        // Push result temp
-        pushOperand(dest);
+        // 3. Push the left operand's name back onto the stack to represent the new result.
+        // The value in EAX is now associated with the name 'left'.
+        pushOperand(left);
+        // --- END OPTIMIZED LOGIC ---
     }
 }
 
@@ -665,7 +662,7 @@ void Compiler::term(){          // stage 1, prod 11
     terms();
 }
 
-void Compiler::terms(){         // stage 1, prod 12
+void Compiler::terms(){          // stage 1, prod 12
     // handles multiplicative and logical-and operators: *, /, %, and
     while (token == "*" || token == "/" || token == "%" || token == "and" || token == "&&") {
         std::string op = token;
@@ -677,40 +674,37 @@ void Compiler::terms(){         // stage 1, prod 12
         std::string left  = popOperand();
 
         if (left.empty() || right.empty()) {
-            processError("operand missing for multiplicative operator");
-            if (!left.empty()) pushOperand(left);
-            if (!right.empty()) pushOperand(right);
+            // ... (error handling) ... GOES HERE!!!!
             return;
         }
 
-        // Create destination temporary and compute dest = left op right
-        std::string dest = getTemp();
-        // Copy left into dest
-        emitAssignCode(left, dest);
-
-        // Apply operator using dest as left operand
+        // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
         if (op == "*") {
-            emitMultiplicationCode(right, dest);
+            emitMultiplicationCode(right, left); // NOTE: Corrected argument order
         } else if (op == "/") {
-            emitDivisionCode(right, dest);
+            emitDivisionCode(right, left); // NOTE: Corrected argument order
         } else if (op == "%") {
-            emitModuloCode(right, dest);
+            emitModuloCode(right, left); // NOTE: Corrected argument order
         } else if (op == "and" || op == "&&") {
-            emitAndCode(right, dest);
+            emitAndCode(right, left); // NOTE: Corrected argument order
         } else {
             processError("unknown multiplicative/logical operator: " + op);
         }
 
-        // Free temporaries used for left/right if they were temps
-        if (isTemporary(left)) freeTemp();
+        // --- OPTIMIZED STAGE 1 LOGIC (for in-register accumulation) ---
+        // 1. The accumulated result is in EAX.
+        
+        // 2. Free the right operand temporary if necessary, as it is consumed.
         if (isTemporary(right)) freeTemp();
 
-        // Push result temp
-        pushOperand(dest);
+        // 3. Push the left operand's name back onto the stack to represent the new result.
+        // The value in EAX is now associated with the name 'left'.
+        pushOperand(left);
+        // --- END OPTIMIZED LOGIC ---
     }
 }
 
-void Compiler::factor(){        // stage 1, prod 13
+void Compiler::factor(){         // stage 1, prod 13
     // factor -> [ unary-op ] part
     if (token == "+" || token == "-" || token == "not") {
         std::string unary = token;
@@ -722,23 +716,37 @@ void Compiler::factor(){        // stage 1, prod 13
             return;
         }
 
-        // Create destination temp and apply unary op
-        std::string dest = getTemp();
-        // Copy operand into dest
-        emitAssignCode(opnd, dest);
+        // --- Special Case: Unary Plus is a no-op ---
+        if (unary == "+") {
+            // The result is just the operand itself. No code generation needed.
+            // Push the operand back onto the stack to be the result of the factor.
+            pushOperand(opnd);
 
-        if (unary == "-") {
-            emitNegationCode(dest);
-        } else if (unary == "+") {
-            // unary plus is a no-op (value already in dest)
-        } else if (unary == "not") {
-            emitNotCode(dest);
         } else {
-            processError("unknown unary operator: " + unary);
+            // --- Unary Minus and NOT (Code Generating) ---
+
+            // Apply unary op: Emitter calculates the operation, leaves result in EAX, and clears contentsOfAReg.
+            if (unary == "-") {
+                emitNegationCode(opnd);
+            } else if (unary == "not") {
+                emitNotCode(opnd);
+            } else {
+                processError("unknown unary operator: " + unary);
+                return;
+            }
+
+            // EAX now holds the result. We need to save it to a new temporary.
+            std::string dest = getTemp();
+            emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
+
+            // Free the temporary used for the operand (which has now been consumed)
+            if (isTemporary(opnd)) freeTemp();
+
+            // Update A register tracking and push the result
+            contentsOfAReg = dest;
+            pushOperand(dest);
         }
 
-        if (isTemporary(opnd)) freeTemp();
-        pushOperand(dest);
     } else {
         // No unary operator; just parse part
         part();
@@ -1165,332 +1173,401 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
         return;
     }
 
-    const SymbolTableEntry &destEntry = symbolTable.at(operand2);
-
-    // Left-hand side must be a VARIABLE
-    if (destEntry.getMode() != VARIABLE) {
-        processError("symbol on left-hand side of assignment must have a storage mode of VARIABLE: " + operand2);
-        return;
-    }
-
-    // Determine types for compatibility
-    storeTypes t1 = whichType(operand1);
-    storeTypes t2 = destEntry.getDataType();
-    if (t1 != t2) {
-        processError("incompatible types in assignment: " + operand1 + " to " + operand2);
-        return;
-    }
-
-    // If source and destination are identical, nothing to do
-    if (operand1 == operand2) return;
-
-    // Ensure operand1 exists in symbol table (literals should have been inserted earlier)
+    // Ensure operand1 exists in symbol table
     if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1)) {
+        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1)){
             insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        } else {
-            processError("reference to undefined symbol on right-hand side: " + operand1);
+        }
+        else {
+            processError("reference to undefined symbol: " + operand1);
             return;
         }
+    contentsOfAReg.clear();
     }
 
     const SymbolTableEntry &srcEntry = symbolTable.at(operand1);
+    const SymbolTableEntry &destEntry = symbolTable.at(operand2);
 
-    // If operand1 is not currently in A (eax), load it
-    if (contentsOfAReg != operand1) {
-        // If operand1 is a literal constant, load immediate into eax
-        if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-            // Use immediate move for integer literal
-            emit("", "mov", "eax, " + srcEntry.getValue(), "; load immediate literal " + srcEntry.getValue());
-        } else {
-            // Load from memory (internal name)
-            emit("", "mov", "eax, [" + srcEntry.getInternalName() + "]", "; load " + operand1 + " into eax");
+
+    // A. Register Spill Management: Deassign/Spill EAX if it holds a temporary *other than* operand1
+    if (!contentsOfAReg.empty() && contentsOfAReg != operand1) {
+        if (isTemporary(contentsOfAReg) && symbolTable.count(contentsOfAReg)) {
+            // Spill the current contents of EAX to its memory location
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
+                 "; spill A reg (" + contentsOfAReg + ")");
         }
+        contentsOfAReg.clear(); // EAX is now clear
     }
 
-    // Store eax into destination memory
+    // B. Load Right Operand (operand1) into EAX if it's not already there
+    if (contentsOfAReg != operand1) {
+        if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
+            // Use immediate MOV for integer literals
+            emit("", "mov", "eax, " + srcEntry.getValue(), "; load immediate literal " + srcEntry.getValue());
+        } else {
+            // Load from memory for variables or temporaries
+            emit("", "mov", "eax, [" + srcEntry.getInternalName() + "]", "; load " + operand1 + " into eax");
+        }
+        contentsOfAReg = operand1; // EAX now holds the value of operand1
+    }
+
+    // C. Perform Assignment: EAX -> Destination Memory
+    // EAX holds the value of operand1, store it into operand2's memory location.
     emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store eax into " + operand2);
 
-    // Update contentsOfAReg to reflect that eax now corresponds to the destination
+    // D. Final State Cleanup
+    // EAX still holds the value. Since we just assigned the value of operand1 to operand2,
+    // EAX now also represents operand2. This is key for optimization of subsequent expressions.
     contentsOfAReg = operand2;
-
-    // If operand1 was a temporary, free it now (its value moved)
-    if (isTemporary(operand1)) freeTemp();
-
-    // Note: operand2 should never be a temporary (assignment target must be a variable)
 }
 
-// Arithmetic / logical emit implementations
+// =========================================================================
+// Conditional register tracking for binary operations (op2 OP op1)
+// =========================================================================
 
-void Compiler::emitAdditionCode(string operand1, string operand2){      // op2 + op1
-    // operand2 is the destination (already contains left operand)
+void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 + op1
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in addition (integers required)");
         return;
     }
 
-    // Ensure both operands exist in symbol table (literals may be inserted earlier)
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
-            return;
+    // A. Register Spill Management: Spill temporaries unrelated to the current operation.
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol (destination): " + operand2);
-        return;
-    }
-
-    // If A register currently holds a temporary that is neither operand1 nor operand2,
-    // spill it to memory and mark it allocated.
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            // store eax into that symbol's internal name
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            // mark it allocated
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    // Load destination (operand2) into eax if it's not already in A
+    const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2); // Left operand (Accumulator)
+
+    // B. Load Left Operand (operand2) into EAX if not already there
     if (contentsOfAReg != operand2) {
-        const auto &destEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, [" + destEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+
+        // CRITICAL FIX 1: If it's a Temporary, track it. If it's a Constant/Variable, clear tracking 
+        // because EAX will be modified and no longer hold the true symbol value.
+        if (isTemporary(operand2)) {
+            contentsOfAReg = operand2;
+        } else {
+            contentsOfAReg.clear();
+        }
     }
 
-    // Add operand1 to eax (use immediate if literal integer)
-    const auto &srcEntry = symbolTable.at(operand1);
-    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "add", "eax, " + srcEntry.getValue(), "; eax += " + srcEntry.getValue());
+    // C. Perform Operation: Add operand1 to EAX
+    
+    // Check if operand1 (right) is a constant *without* a memory label (transient immediate).
+    // Note: If op1Entry.getInternalName() is NOT empty (like "I6"), it must be loaded from memory.
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
+        emit("", "add", "eax, " + op1Entry.getValue(), "; eax += " + op1Entry.getValue());
     } else {
-        emit("", "add", "eax, " + srcEntry.getInternalName(), "; eax += " + operand1);
+        // Use memory access for all other cases (variables, temporaries, and constants with I# labels)
+        emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; eax += " + operand1);
     }
 
-    // Store result back to destination memory
-    const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store result into " + operand2);
-
-    // Update A register tracking: now A corresponds to operand2
-    contentsOfAReg = operand2;
-
-    // Free any temporary used as source (operand1) if it was a temp
+    // D. Final Tracking Adjustment
+    if (!isTemporary(operand2)) {
+        contentsOfAReg.clear();
+    }
+    
+    // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-    // operand2 is the result temp and must not be freed here
+    
+    // === F. Create and Store Result Temp ===
+    string tmp = getTemp();                    
+    
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store result into " + tmp);
+    
+    // Push result temp for parser
+    pushOperand(tmp);
+    
+    // Register now contains this temp
+    contentsOfAReg = tmp;
 }
 
-void Compiler::emitSubtractionCode(string operand1, string operand2){   // op2 - op1
+void Compiler::emitSubtractionCode(string operand1, string operand2){       // op2 - op1
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in subtraction (integers required)");
         return;
     }
 
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
-            return;
+    // A. Spill management (same as addition, but ensure `contentsOfAReg.clear()` is called after spill)
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol (destination): " + operand2);
-        return;
-    }
-
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
+    const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2); 
+
+    // B. Load Left Operand (operand2) into EAX if not already there
     if (contentsOfAReg != operand2) {
-        const auto &destEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, [" + destEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+        
+        // CRITICAL FIX 1: Conditional tracking
+        if (isTemporary(operand2)) {
+            contentsOfAReg = operand2;
+        } else {
+            contentsOfAReg.clear();
+        }
     }
 
-    const auto &srcEntry = symbolTable.at(operand1);
-    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "sub", "eax, " + srcEntry.getValue(), "; eax -= " + srcEntry.getValue());
+    // C. Perform Operation
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
+        emit("", "sub", "eax, " + op1Entry.getValue(), "; eax -= " + op1Entry.getValue());
     } else {
-        emit("", "sub", "eax, " + srcEntry.getInternalName(), "; eax -= " + operand1);
+        // Must reference memory for SUB
+        emit("", "sub", "eax, [" + op1Entry.getInternalName() + "]", "; eax -= " + operand1); 
     }
-
-    const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store result into " + operand2);
-    contentsOfAReg = operand2;
-
+    
+    // D. Final Tracking Adjustment
+    if (!isTemporary(operand2)) {
+        contentsOfAReg.clear();
+    }
+    
+    // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
+    // Do NOT free operand2 here.
+    
+    // === F. Create and Store Result Temp ===
+    string tmp = getTemp();
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+    
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store result into " + tmp);
+    
+    // Push result for parser
+    pushOperand(tmp);
+    
+    // EAX now holds this temp's value
+    contentsOfAReg = tmp;
 }
 
-void Compiler::emitMultiplicationCode(string operand1, string operand2){        // op2 * op1
+void Compiler::emitMultiplicationCode(string operand1, string operand2){      // op2 * op1
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in multiplication (integers required)");
         return;
     }
 
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
-            return;
+    // A. Register Spill Management
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol (destination): " + operand2);
-        return;
-    }
-
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
+    const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2); 
+
+    // B. Load Left Operand (operand2) into EAX if not already there
     if (contentsOfAReg != operand2) {
-        const auto &destEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, [" + destEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+        
+        // CRITICAL FIX 1: Conditional tracking
+        if (isTemporary(operand2)) {
+            contentsOfAReg = operand2;
+        } else {
+            contentsOfAReg.clear();
+        }
     }
 
-    const auto &srcEntry = symbolTable.at(operand1);
-    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "imul", "eax, " + srcEntry.getValue(), "; eax *= " + srcEntry.getValue());
+    // C. Perform Operation
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
+        // Two-operand IMUL: IMUL destination, multiplier (result in destination)
+        emit("", "imul", "eax, " + op1Entry.getValue(), "; eax *= " + op1Entry.getValue());
     } else {
-        emit("", "imul", "eax, " + srcEntry.getInternalName(), "; eax *= " + operand1);
+        // One-operand IMUL: IMUL multiplier (result in EDX:EAX, but we only use EAX)
+        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; eax *= " + operand1);
     }
-
-    const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store result into " + operand2);
-    contentsOfAReg = operand2;
-
+    
+    // D. CRITICAL FIX 2: Final Tracking Adjustment
+    if (!isTemporary(operand2)) {
+        contentsOfAReg.clear();
+    }
+    
+    // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
 }
 
-void Compiler::emitDivisionCode(string operand1, string operand2){      // op2 / op1
-    // op2 is dividend (left), operand1 is divisor (right)
+void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 / op1
+    // (op1Entry is the divisor, op2Entry is the dividend)
+    const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2);
+    
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in division (integers required)");
         return;
     }
 
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
-            return;
+    // A. Spill unrelated A reg content (Keep as is)
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol (dividend): " + operand2);
-        return;
-    }
-
-    // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    // Load dividend (operand2) into eax if not already there
+    // B. Load dividend (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        const auto &dividendEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, [" + dividendEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        // FIX: Use op2Entry instead of the undefined dividendEntry
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
+        contentsOfAReg = operand2; 
     }
 
-    // Sign-extend eax into edx:eax
-    emit("", "cdq", "", "; sign-extend eax into edx:eax");
+    // C. Sign-extend eax into edx:eax
+    emit("", "cdq", "", "; sign-extend eax into edx:eax for division");
+    contentsOfAReg.clear(); // EAX/EDX contents are now computed, clear tracking
 
-    // Perform idiv by divisor (operand1)
-    const auto &divisorEntry = symbolTable.at(operand1);
-    if (divisorEntry.getMode() == CONSTANT && isInteger(divisorEntry.getValue())) {
-        // For immediate divisor, move immediate into a temp register or memory is required.
-        // Simpler: move immediate into a temp memory location (ensure it exists)
-        string immName = operand1;
-        if (isInteger(immName) && !symbolTable.count(immName)) {
-            insert(immName, INTEGER, CONSTANT, immName, YES, 1);
-        }
-        emit("", "idiv", divisorEntry.getInternalName(), "; idiv by " + operand1);
-    } else {
-        emit("", "idiv", divisorEntry.getInternalName(), "; idiv by " + operand1);
-    }
+    // D. Perform IDIV (Quotient in EAX, Remainder in EDX)
+    // FIX: Use op1Entry instead of the undefined divisorEntry
+    emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
 
-    // After IDIV, quotient in eax. Store quotient into destination (operand2's internal name)
-    const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store quotient into " + operand2);
-
-    // Update A register tracking
+    // E. Track quotient in EAX (but this is temporary—we convert to a true temp next)
     contentsOfAReg = operand2;
-
-    // Free temporary divisor if it was a temp
+    
+    // F. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
+    
+    // === G. Create and Store Result Temp ===
+    string tmp = getTemp();
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+    
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store quotient into " + tmp);
+    
+    // Push temp result for parser use
+    pushOperand(tmp);
+    
+    // Track EAX now holding this new temp
+    contentsOfAReg = tmp;
 }
 
 void Compiler::emitModuloCode(string operand1, string operand2){        // op2 % op1
-    // op2 is dividend, operand1 is divisor; result should be remainder
+    // (op1Entry is the divisor, op2Entry is the dividend)
+    const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2);
+    
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in modulo (integers required)");
         return;
     }
 
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
-            return;
+    // A. Spill unrelated A reg content (Keep as is)
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol (dividend): " + operand2);
-        return;
-    }
-
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand2 && contentsOfAReg != operand1) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
+    // B. Load dividend (operand2) into eax if not already there
     if (contentsOfAReg != operand2) {
-        const auto &dividendEntry = symbolTable.at(operand2);
-        emit("", "mov", "eax, [" + dividendEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        // FIX: Use op2Entry instead of the undefined dividendEntry
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
+        contentsOfAReg = operand2; 
     }
 
+    // C. Sign-extend eax into edx:eax
     emit("", "cdq", "", "; sign-extend eax into edx:eax for idiv");
+    contentsOfAReg.clear(); // EAX/EDX contents are now computed, clear tracking
 
-    const auto &divisorEntry = symbolTable.at(operand1);
-    emit("", "idiv", divisorEntry.getInternalName(), "; idiv by " + operand1);
+    // D. Perform IDIV (Quotient in EAX, Remainder in EDX)
+    // FIX: Use op1Entry instead of the undefined divisorEntry
+    emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
 
-    // Remainder is in edx; store edx into destination
-    const auto &destEntry = symbolTable.at(operand2);
-    emit("", "mov", "[" + destEntry.getInternalName() + "], edx", "; store remainder into " + operand2);
+    // E. Move remainder (EDX) into EAX (the accumulator for the result)
+    emit("", "mov", "eax, edx", "; move remainder (edx) to accumulator (eax)");
 
-    // A register no longer corresponds to destination (eax holds quotient)
-    contentsOfAReg.clear();
-
+    // F. Final Tracking: EAX now holds the remainder
+    contentsOfAReg = operand2;
+    
+    // G. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
+    
+    // === H. Create and Store Result Temp ===
+    string tmp = getTemp();
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store remainder into " + tmp);
+    
+    // Push temp result for parser to consume
+    pushOperand(tmp);
+    
+    // Track EAX now holding the temp
+    contentsOfAReg = tmp;
 }
 
-void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -op1 (operand1 is destination temp)
-    // operand1 is expected to be the destination (temp) that already contains the operand value
+// ------------------------------------------------------
+// LOGICAL OPERATORS (with conditional tracking)
+// ------------------------------------------------------
+
+void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -op1
     if (!symbolTable.count(operand1)) {
         processError("reference to undefined symbol in negation: " + operand1);
         return;
@@ -1500,20 +1577,49 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
         return;
     }
 
-    // Ensure value is in eax
-    if (contentsOfAReg != operand1) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", "; load " + operand1 + " into eax for negation");
+    // spill unrelated
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
+        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
+        contentsOfAReg.clear();
     }
 
+    // A. Load operand into EAX if needed
+    if (contentsOfAReg != operand1) {
+        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]",
+             "; load " + operand1 + " into eax for negation");
+    }
+
+    // B. Perform negation
     emit("", "neg", "eax", "; negate eax");
 
-    // Store back
-    emit("", "mov", "[" + symbolTable.at(operand1).getInternalName() + "], eax", "; store negated value into " + operand1);
+    // === C. Create result temp ===
+    string tmp = getTemp();
 
-    contentsOfAReg = operand1;
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store negated value into " + tmp);
+
+    // D. Push result
+    pushOperand(tmp);
+    contentsOfAReg = tmp;
 }
 
-void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !op1 (operand1 is destination temp)
+void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !op1
     if (!symbolTable.count(operand1)) {
         processError("reference to undefined symbol in not: " + operand1);
         return;
@@ -1523,165 +1629,201 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !
         return;
     }
 
-    // Ensure value is in eax
-    if (contentsOfAReg != operand1) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", "; load " + operand1 + " into eax for not");
+    // spill unrelated
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
+        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
+        contentsOfAReg.clear();
     }
 
-    // Bitwise NOT will flip -1 <-> 0 for boolean representation used earlier
+    // A. Load operand into EAX if needed
+    if (contentsOfAReg != operand1) {
+        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]",
+             "; load " + operand1 + " into eax for not");
+    }
+
+    // B. Perform NOT
     emit("", "not", "eax", "; bitwise not eax");
 
-    // Store back
-    emit("", "mov", "[" + symbolTable.at(operand1).getInternalName() + "], eax", "; store not result into " + operand1);
+    // === C. Create result temp ===
+    string tmp = getTemp();
 
-    contentsOfAReg = operand1;
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(BOOLEAN);
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store boolean not into " + tmp);
+
+    // D. Push result
+    pushOperand(tmp);
+    contentsOfAReg = tmp;
 }
 
-void Compiler::emitAndCode(string operand1, string operand2){           // op2 && op1
-    // operand2 is destination (left), operand1 is right operand
+void Compiler::emitAndCode(string operand1, string operand2){            // op2 && op1
     if (whichType(operand1) != BOOLEAN || whichType(operand2) != BOOLEAN) {
         processError("illegal type in and (booleans required)");
         return;
     }
 
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
-            return;
+    // A. Spill
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol (destination): " + operand2);
-        return;
-    }
-
-    // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    // Load destination (operand2) into eax if not already there
+    // B. Load operand2
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+             "; load " + operand2 + " into eax");
+
+        contentsOfAReg = isTemporary(operand2) ? operand2 : "";
     }
 
-    // AND with operand1
-    const auto &srcEntry = symbolTable.at(operand1);
-    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "and", "eax, " + srcEntry.getValue(), "; eax &= " + srcEntry.getValue());
+    // C. AND with operand1
+    const auto &op1Entry = symbolTable.at(operand1);
+    if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
+        emit("", "and", "eax, " + op1Entry.getValue(), "; eax &= " + op1Entry.getValue());
     } else {
-        emit("", "and", "eax, " + srcEntry.getInternalName(), "; eax &= " + operand1);
+        emit("", "and", "eax, [" + op1Entry.getInternalName() + "]",
+             "; eax &= " + operand1);
     }
 
-    // Store result back to destination
-    emit("", "mov", "[" + symbolTable.at(operand2).getInternalName() + "], eax", "; store result into " + operand2);
+    // D. Tracking adjustment
+    if (!isTemporary(operand2)) contentsOfAReg.clear();
 
-    // Update A register tracking
-    contentsOfAReg = operand2;
-
-    // Free temporary source if needed
     if (isTemporary(operand1)) freeTemp();
+
+    // === E. RESULT TEMP ===
+    string tmp = getTemp();
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store boolean result into " + tmp);
+
+    pushOperand(tmp);
+    contentsOfAReg = tmp;
 }
 
-// Comparison and logical-or emit implementations
-
-void Compiler::emitOrCode(string operand1, string operand2){            // op2 || op1
-    // operand2 is destination (left), operand1 is right
+void Compiler::emitOrCode(string operand1, string operand2){             // op2 || op1
     if (whichType(operand1) != BOOLEAN || whichType(operand2) != BOOLEAN) {
         processError("illegal type in or (booleans required)");
         return;
     }
 
-    // Ensure operands exist in symbol table (literals may be inserted)
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
-            return;
+    // A. Spill
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol (destination): " + operand2);
-        return;
-    }
-
-    // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    // Load destination (operand2) into eax if not already there
+    // B. Load operand2
     if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+             "; load " + operand2 + " into eax");
+        contentsOfAReg = isTemporary(operand2) ? operand2 : "";
     }
 
-    // OR with operand1
-    const auto &srcEntry = symbolTable.at(operand1);
-    if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "or", "eax, " + srcEntry.getValue(), "; eax |= " + srcEntry.getValue());
+    // C. OR with operand1
+    const auto &op1Entry = symbolTable.at(operand1);
+    if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
+        emit("", "or", "eax, " + op1Entry.getValue(), "; eax |= " + op1Entry.getValue());
     } else {
-        emit("", "or", "eax, " + srcEntry.getInternalName(), "; eax |= " + operand1);
+        emit("", "or", "eax, [" + op1Entry.getInternalName() + "]",
+             "; eax |= " + operand1);
     }
 
-    // Store result back to destination
-    emit("", "mov", "[" + symbolTable.at(operand2).getInternalName() + "], eax", "; store result into " + operand2);
+    // D. Tracking adjustment
+    if (!isTemporary(operand2)) contentsOfAReg.clear();
 
-    // Update A register tracking
-    contentsOfAReg = operand2;
-
-    // Free temporary source if needed
     if (isTemporary(operand1)) freeTemp();
+
+    // === E. RESULT TEMP ===
+    string tmp = getTemp();
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+         "; store boolean result into " + tmp);
+
+    pushOperand(tmp);
+    contentsOfAReg = tmp;
 }
 
-void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 == op1
-    // Types must match
-    storeTypes t1 = whichType(operand1);
-    storeTypes t2 = whichType(operand2);
-    if (t1 != t2) {
-        processError("incompatible types in equality comparison");
-        return;
-    }
+// ------------------------------------------------------
+// COMPARISON OPERATORS (ensure contentsOfAReg is cleared after result)
+// ------------------------------------------------------
 
-    // Ensure operands exist (insert literals if needed)
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, t1, CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
+void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 == op1
+    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in equality (integers required)");
             return;
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol: " + operand2);
-        return;
-    }
-
+    
     // Spill unrelated A reg content
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
     // Load operand2 into eax if not already there
     if (contentsOfAReg != operand2) {
         emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        // Don't track here, as the result (0 or -1) will immediately overwrite it.
+        contentsOfAReg.clear();
+    } else {
+        // If contentsOfAReg == operand2, we still need to clear it after the comparison,
+        // because EAX will be overwritten with the boolean result (0 or -1).
+        contentsOfAReg.clear();
     }
 
     // Compare eax with operand1
@@ -1689,166 +1831,136 @@ void Compiler::emitEqualityCode(string operand1, string operand2){      // op2 =
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
         emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
-    // Prepare labels
+    // --- Generate Boolean Result in EAX ---
     string Ltrue = getLabel();
     string Lend  = getLabel();
-
-    // Jump if equal to Ltrue
     emit("", "JE", Ltrue, "; jump if equal");
-
-    // Load FALSE into eax (0). Ensure 'false' constant exists
-    if (!symbolTable.count("false")) {
-        insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    }
-    // Use immediate 0 for speed
-    emit("", "mov", "eax, 0", "; load FALSE");
-    // Jump to end
+    emit("", "mov", "eax, 0", "; load FALSE (0)");
     emit("", "jmp", Lend, "; jump to end");
-
-    // Label Ltrue: load TRUE into eax (-1)
     emit(Ltrue + ":");
-    if (!symbolTable.count("true")) {
-        insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    }
-    emit("", "mov", "eax, -1", "; load TRUE");
-
-    // Label Lend:
+    emit("", "mov", "eax, -1", "; load TRUE (-1)");
     emit(Lend + ":");
 
-    // Create destination temporary to hold boolean result
-    string dest = getTemp();
-    // Ensure dest is boolean
-    symbolTable.at(dest).setDataType(BOOLEAN);
+    // EAX now holds the boolean result. contentsOfAReg MUST remain clear 
+    // until the calling expression routine assigns a new temporary name.
 
-    // Store eax into dest internal name
-    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
-
-    // Deassign/free temporaries used as operands
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
-
-    // A register now corresponds to dest
-    contentsOfAReg = dest;
-
-    // Push result onto operand stack
-    pushOperand(dest);
 }
 
 void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 != op1
-    // Reuse equality pattern but invert jump
-    storeTypes t1 = whichType(operand1);
-    storeTypes t2 = whichType(operand2);
-    if (t1 != t2) {
-        processError("incompatible types in inequality comparison");
-        return;
-    }
-
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, t1, CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
+    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in inequality (integers required)");
             return;
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol: " + operand2);
-        return;
-    }
 
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
+    // Load operand2 into eax if not already there
     if (contentsOfAReg != operand2) {
         emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        // Don't track here, as the result (0 or -1) will immediately overwrite it.
+        contentsOfAReg.clear();
+    } else {
+        // If contentsOfAReg == operand2, we still need to clear it after the comparison,
+        // because EAX will be overwritten with the boolean result (0 or -1).
+        contentsOfAReg.clear();
     }
 
+    // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
         emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        // Use memory reference for non-immediate values
+        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
     string Lend  = getLabel();
 
     // Jump if not equal to Ltrue
-    emit("", "jne", Ltrue, "; jump if not equal");
+    emit("", "JNE", Ltrue, "; jump if not equal");
 
-    // Load FALSE into eax
-    if (!symbolTable.count("false")) {
-        insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    }
+    // FALSE PATH
+    //   Remove symbol table checks for "false" constant
     emit("", "mov", "eax, 0", "; load FALSE");
     emit("", "jmp", Lend, "; jump to end");
 
+    // Ltrue: TRUE PATH
     emit(Ltrue + ":");
-    if (!symbolTable.count("true")) {
-        insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    }
+    //   Remove symbol table checks for "true" constant
     emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
 
-    string dest = getTemp();
-    symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
-
+    // Deassign/free temporaries
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
-
-    contentsOfAReg = dest;
-    pushOperand(dest);
 }
 
 void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 < op1
-    // op2 < op1  (operand2 is left, operand1 is right)
-    if (whichType(operand1) != whichType(operand2)) {
-        processError("incompatible types in less-than comparison");
-        return;
-    }
-
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in less-than (integers required)");
             return;
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol: " + operand2);
-        return;
+
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
+        }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
+        contentsOfAReg.clear();
     }
 
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
-        }
-        contentsOfAReg.clear();
+    // Load operand2 into eax if not already there
+    const auto& op2Entry = symbolTable.at(operand2);
+    if (op2Entry.getMode() == CONSTANT && isInteger(op2Entry.getValue())) {
+        emit("", "mov", "eax, " + op2Entry.getValue(), "; load constant " + op2Entry.getValue());
+    } else {
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2);
     }
 
     if (contentsOfAReg != operand2) {
         emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+        // Don't track here, as the result (0 or -1) will immediately overwrite it.
+        contentsOfAReg.clear();
+    } else {
+        // If contentsOfAReg == operand2, we still need to clear it after the comparison,
+        // because EAX will be overwritten with the boolean result (0 or -1).
+        contentsOfAReg.clear();
     }
 
+    // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
         emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        // Use memory reference for non-immediate values
+        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
@@ -1857,199 +1969,184 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
     // Jump if less (signed)
     emit("", "JL", Ltrue, "; jump if less");
 
-    // FALSE
-    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
+    // FALSE PATH
+    //   Remove symbol table checks for "false" constant
     emit("", "mov", "eax, 0", "; load FALSE");
     emit("", "jmp", Lend, "; jump to end");
 
+    // Ltrue: TRUE PATH
     emit(Ltrue + ":");
-    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
+    //   Remove symbol table checks for "true" constant
     emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
 
-    string dest = getTemp();
-    symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
-
+    // Deassign/free temporaries
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
-
-    contentsOfAReg = dest;
-    pushOperand(dest);
 }
 
 void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     // op2 <= op1
-    if (whichType(operand1) != whichType(operand2)) {
-        processError("incompatible types in less-than-or-equal comparison");
-        return;
-    }
-
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in less-than-or-equal (integers required)");
             return;
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol: " + operand2);
-        return;
-    }
 
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+    // Load operand2 into eax if not already there
+    const auto &op2Entry = symbolTable.at(operand2);
+    if (op2Entry.getMode() == CONSTANT && isInteger(op2Entry.getValue())) {
+        emit("", "mov", "eax, " + op2Entry.getValue(), "; load constant " + op2Entry.getValue());
+    } else {
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
     }
-
+    contentsOfAReg.clear();
+    
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
         emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        // Use memory reference
+        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
     string Lend  = getLabel();
 
     // Jump if less or equal (signed)
-    emit("", "jle", Ltrue, "; jump if less or equal");
+    emit("", "JLE", Ltrue, "; jump if less or equal");
 
-    // FALSE
-    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    emit("", "mov", "eax, 0", "; load FALSE");
+    // FALSE PATH
+    //   Remove symbol table checks
+    emit("", "mov", "eax, 0", "; load FALSE (0)");
     emit("", "jmp", Lend, "; jump to end");
 
+    // Ltrue: TRUE PATH
     emit(Ltrue + ":");
-    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    emit("", "mov", "eax, -1", "; load TRUE");
+    //   Remove symbol table checks
+    emit("", "mov", "eax, -1", "; load TRUE (-1)");
 
     emit(Lend + ":");
 
-    string dest = getTemp();
-    symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
-
+    // Deassign/free temporaries
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
-
-    contentsOfAReg = dest;
-    pushOperand(dest);
 }
 
 void Compiler::emitGreaterThanCode(string operand1, string operand2){           // op2 > op1
-    if (whichType(operand1) != whichType(operand2)) {
-        processError("incompatible types in greater-than comparison");
-        return;
-    }
-
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in greater-than (integers required)");
             return;
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol: " + operand2);
-        return;
-    }
 
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+    // Load operand2 into eax if not already there
+    const auto &op2Entry = symbolTable.at(operand2);
+    if (op2Entry.getMode() == CONSTANT && isInteger(op2Entry.getValue())) {
+        emit("", "mov", "eax, " + op2Entry.getValue(), "; load constant " + op2Entry.getValue());
+    } else {
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
     }
+    contentsOfAReg.clear();
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
         emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        // Use memory reference
+        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
     string Lend  = getLabel();
 
     // Jump if greater (signed)
-    emit("", "jg", Ltrue, "; jump if greater");
+    emit("", "JG", Ltrue, "; jump if greater");
 
-    // FALSE
-    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    emit("", "mov", "eax, 0", "; load FALSE");
+
+    // FALSE PATH
+    //   Remove symbol table checks
+    emit("", "mov", "eax, 0", "; load FALSE (0)");
     emit("", "jmp", Lend, "; jump to end");
 
+    // Ltrue: TRUE PATH
     emit(Ltrue + ":");
-    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    emit("", "mov", "eax, -1", "; load TRUE");
+    //   Remove symbol table checks
+    emit("", "mov", "eax, -1", "; load TRUE (-1)");
 
     emit(Lend + ":");
 
-    string dest = getTemp();
-    symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
-
+    // Deassign/free temporaries
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
-
-    contentsOfAReg = dest;
-    pushOperand(dest);
 }
 
 void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  // op2 >= op1
-    if (whichType(operand1) != whichType(operand2)) {
-        processError("incompatible types in greater-than-or-equal comparison");
-        return;
-    }
-
-    if (!symbolTable.count(operand1)) {
-        if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1))
-            insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        else {
-            processError("reference to undefined symbol: " + operand1);
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in greater-than-or-equal (integers required)");
             return;
         }
-    }
-    if (!symbolTable.count(operand2)) {
-        processError("reference to undefined symbol: " + operand2);
-        return;
-    }
 
-    if (!contentsOfAReg.empty() && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
-        if (symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
-            symbolTable.at(contentsOfAReg).setAlloc(YES);
+    // Spill unrelated A reg content
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
+        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        if (entry.getAlloc() == NO) {
+            // allocate manually here since allocateTempStorage() is unavailable
+            entry.setAlloc(YES);
+            if (entry.getInternalName().empty()) {
+                entry.setInternalName(contentsOfAReg);
+            }
         }
+        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", "; load " + operand2 + " into eax");
-        contentsOfAReg = operand2;
+    // Load operand2 into eax if not already there
+const auto &op2Entry = symbolTable.at(operand2);
+
+// Load operand2 into eax (handle constants!)
+    if (op2Entry.getMode() == CONSTANT && isInteger(op2Entry.getValue())) {
+        emit("", "mov", "eax, " + op2Entry.getValue(), "; load constant " + op2Entry.getValue());
+    } else {
+        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
     }
+    contentsOfAReg.clear();
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "CMP", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "CMP", "eax, " + srcEntry.getInternalName(), "; compare with " + operand1);
+        // Use memory reference
+        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
@@ -2058,26 +2155,21 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
     // Jump if greater or equal (signed)
     emit("", "JGE", Ltrue, "; jump if greater or equal");
 
-    // FALSE
-    if (!symbolTable.count("false")) insert("false", BOOLEAN, CONSTANT, "0", YES, 1);
-    emit("", "mov", "eax, 0", "; load FALSE");
+    // FALSE PATH
+    //   Remove symbol table checks
+    emit("", "mov", "eax, 0", "; load FALSE (0)");
     emit("", "jmp", Lend, "; jump to end");
 
+    // Ltrue: TRUE PATH
     emit(Ltrue + ":");
-    if (!symbolTable.count("true")) insert("true", BOOLEAN, CONSTANT, "-1", YES, 1);
-    emit("", "mov", "eax, -1", "; load TRUE");
+    //   Remove symbol table checks
+    emit("", "mov", "eax, -1", "; load TRUE (-1)");
 
     emit(Lend + ":");
 
-    string dest = getTemp();
-    symbolTable.at(dest).setDataType(BOOLEAN);
-    emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store comparison result into " + dest);
-
+    // Deassign/free temporaries
     if (isTemporary(operand1)) freeTemp();
     if (isTemporary(operand2)) freeTemp();
-
-    contentsOfAReg = dest;
-    pushOperand(dest);
 }
 
 /* ------------------------------------------------------
@@ -2203,14 +2295,10 @@ string Compiler::nextToken(){   // returns next tok or END_OF_FILE marker
             // normalize to lowercase already ensured by checks
             return token;
         }
-
+        
         // Number literal (integer)
-        if (std::isdigit(static_cast<unsigned char>(ch)) || ((ch == '+' || ch == '-') && std::isdigit(static_cast<unsigned char>(sourceFile.peek())))) {
-            // handle optional leading sign followed by digits
-            if (ch == '+' || ch == '-') {
-                token.push_back(ch);
-                ch = nextChar();
-            }
+        if (std::isdigit(static_cast<unsigned char>(ch))) {
+            // Only check for digits; '+' and '-' must be parsed as separate operators
             while (ch != END_OF_FILE && std::isdigit(static_cast<unsigned char>(ch))) {
                 token.push_back(ch);
                 ch = nextChar();
@@ -2271,29 +2359,28 @@ void Compiler::processError(string err){
 
 //////////////////// EXPANDED DURING STAGE 1
 
-void Compiler::freeTemp(){
-    // Only decrement if we actually have a temp allocated
-    if (currentTempNo > -1) {
-        --currentTempNo;
-    }
-    
+// Free the last temporary (or the one currently in contentsOfAReg)
+void Compiler::freeTemp() {
+    if (contentsOfAReg.empty()) return;
+    auto it = symbolTable.find(contentsOfAReg);
+    if (it == symbolTable.end()) return;
+    it->second.setAlloc(NO);
+    contentsOfAReg.clear();
 }
 
-
-string Compiler::getTemp(){
-    // Allocate a new temporary external name "Tn"
+// 2) Create temp name (no allocation of storage)
+string Compiler::getTemp() {
     ++currentTempNo;
-    if (currentTempNo > maxTempNo) {
-        maxTempNo = currentTempNo;
-    }
-    std::string temp = "T" + std::to_string(currentTempNo);
-
-    // If this temp is new, insert into symbol table as an INTEGER variable by default.
-    // (Type may be adjusted later by code generation routines.)
+    if (currentTempNo > maxTempNo) maxTempNo = currentTempNo;
+    string temp = "T" + std::to_string(currentTempNo);
+    // Insert placeholder if desired, but mark alloc == NO so it won't appear in .data/.bss
     if (symbolTable.count(temp) == 0) {
-        insert(temp, INTEGER, VARIABLE, "", YES, 1);
+        insert(temp, INTEGER, VARIABLE, "", NO, 1); // alloc == NO
+    } else {
+        symbolTable.at(temp).setDataType(INTEGER);
+        symbolTable.at(temp).setMode(VARIABLE);
+        symbolTable.at(temp).setAlloc(NO);
     }
-
     return temp;
 }
 
@@ -2304,14 +2391,13 @@ string Compiler::getLabel(){
     return oss.str();
 }
 
-bool Compiler::isTemporary(string s) const{       // determines if s represents a temporary
+bool Compiler::isTemporary(string s) const {
     if (s.size() < 2) return false;
     if (s[0] != 'T') return false;
     for (size_t i = 1; i < s.size(); ++i) {
-        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+        if (!isdigit(static_cast<unsigned char>(s[i]))) return false;
     }
     return true;
 }
 
 /////////////////////////////////////////////////////////////////////////////
-
