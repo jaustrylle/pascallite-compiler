@@ -32,6 +32,8 @@ static uint I_count = 0;
 static uint B_count = 0;
 static bool begChar = true;
 
+std::string whichTypeStr(storeTypes type);
+
 // String rep of END_OF_FILE char
 const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE);
 
@@ -87,6 +89,17 @@ bool isIntegerLiteral(std::string s) {
         hasDigit = true;
     }
     return hasDigit;
+}
+
+std::string whichTypeStr(storeTypes type) {
+    switch (type) {
+        case INTEGER:
+            return "INTEGER";
+        case BOOLEAN:
+            return "BOOLEAN";
+        default:
+            return "UNKNOWN_TYPE";
+    }
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -1161,63 +1174,78 @@ void Compiler::emitWriteCode(string operand, string /*operand2*/){
     }
 }
 
-void Compiler::emitAssignCode(string operand1, string operand2){        // op2 = op1
+void Compiler::emitAssignCode(string operand1, string operand2){     // op2 = op1
     if (operand1.empty() || operand2.empty()) {
         processError("internal error: empty operand in emitAssignCode");
         return;
     }
 
-    // operand2 must be a defined symbol (target)
+    // Ensure target (operand2) exists and source (operand1) exists/is inserted (initial symbol table checks remain unchanged)
+    // ... (Your existing symbol table checks and constant insertion logic here) ...
+    
+    // Check if operand2 is a defined symbol (target)
     if (!symbolTable.count(operand2)) {
         processError("reference to undefined symbol on left-hand side: " + operand2);
         return;
     }
-
-    // Ensure operand1 exists in symbol table
+    // Ensure operand1 exists (checking/inserting constant literals)
     if (!symbolTable.count(operand1)) {
         if (isLiteral(operand1) || isInteger(operand1) || isBoolean(operand1)){
             insert(operand1, whichType(operand1), CONSTANT, operand1, YES, 1);
-        }
-        else {
+        } else {
             processError("reference to undefined symbol: " + operand1);
             return;
         }
-    contentsOfAReg.clear();
     }
 
     const SymbolTableEntry &srcEntry = symbolTable.at(operand1);
-    const SymbolTableEntry &destEntry = symbolTable.at(operand2);
+    SymbolTableEntry &destEntry = symbolTable.at(operand2); // Make destEntry non-const for type update
 
+    // FIX 1: Type Compatibility Check
+    // Pascallite assignments require types to match.
+    if (whichType(operand1) != whichType(operand2)) {
+        processError("type mismatch in assignment: cannot assign " + whichTypeStr(whichType(operand1)) + " to " + whichTypeStr(whichType(operand2)));
+        return;
+    }
 
-    // A. Register Spill Management: Deassign/Spill EAX if it holds a temporary *other than* operand1
+    // A. Register Spill Management: Spill temporaries unrelated to the current operation.
+    // ... (Your existing Section A logic here - ensures EAX is clean if needed) ...
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1) {
         if (isTemporary(contentsOfAReg) && symbolTable.count(contentsOfAReg)) {
-            // Spill the current contents of EAX to its memory location
             emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
                  "; spill A reg (" + contentsOfAReg + ")");
         }
-        contentsOfAReg.clear(); // EAX is now clear
+        contentsOfAReg.clear(); 
     }
 
     // B. Load Right Operand (operand1) into EAX if it's not already there
+    // ... (Your existing Section B logic here - loads operand1 into EAX) ...
     if (contentsOfAReg != operand1) {
         if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-            // Use immediate MOV for integer literals
             emit("", "mov", "eax, " + srcEntry.getValue(), "; load immediate literal " + srcEntry.getValue());
         } else {
-            // Load from memory for variables or temporaries
             emit("", "mov", "eax, [" + srcEntry.getInternalName() + "]", "; load " + operand1 + " into eax");
         }
-        contentsOfAReg = operand1; // EAX now holds the value of operand1
+        contentsOfAReg = operand1; 
     }
 
     // C. Perform Assignment: EAX -> Destination Memory
-    // EAX holds the value of operand1, store it into operand2's memory location.
     emit("", "mov", "[" + destEntry.getInternalName() + "], eax", "; store eax into " + operand2);
 
-    // D. Final State Cleanup
+    // D. Final State Cleanup and Type Update
+    
+    // FIX 2: Deallocate Temporary storage if source was a temporary (i.e., the result of an expression)
+    if (isTemporary(operand1)) {
+        freeTemp(); 
+    }
+    
+    // Since the assignment has occurred, the destination variable's type must be updated 
+    // in case the single-pool temporary was reused later for a different type.
+    // This is primarily for the type system, but good practice.
+    destEntry.setDataType(whichType(operand1)); // Update destination type to match source type
+
     // EAX still holds the value. Since we just assigned the value of operand1 to operand2,
-    // EAX now also represents operand2. This is key for optimization of subsequent expressions.
+    // EAX now also represents operand2.
     contentsOfAReg = operand2;
 }
 
@@ -1225,7 +1253,8 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
 // Conditional register tracking for binary operations (op2 OP op1)
 // =========================================================================
 
-void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 + op1
+void Compiler::emitAdditionCode(string operand1, string operand2){    // op2 + op1
+    // ... (Type Checking and Register Spill Management - Section A - unchanged) ...
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in addition (integers required)");
         return;
@@ -1233,9 +1262,8 @@ void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 
 
     // A. Register Spill Management: Spill temporaries unrelated to the current operation.
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
-        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        auto &entry = symbolTable.at(contentsOfAReg);
         if (entry.getAlloc() == NO) {
-            // allocate manually here since allocateTempStorage() is unavailable
             entry.setAlloc(YES);
             if (entry.getInternalName().empty()) {
                 entry.setInternalName(contentsOfAReg);
@@ -1253,46 +1281,45 @@ void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 
     if (contentsOfAReg != operand2) {
         emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
 
-        // CRITICAL FIX 1: If it's a Temporary, track it. If it's a Constant/Variable, clear tracking 
-        // because EAX will be modified and no longer hold the true symbol value.
-        if (isTemporary(operand2)) {
-            contentsOfAReg = operand2;
-        } else {
-            contentsOfAReg.clear();
-        }
+        // CRITICAL FIX 1: EAX now holds the value of operand2. Track it, regardless of type.
+        // We only clear it if the value is modified (in Section D).
+        contentsOfAReg = operand2;
     }
 
     // C. Perform Operation: Add operand1 to EAX
-    
-    // Check if operand1 (right) is a constant *without* a memory label (transient immediate).
-    // Note: If op1Entry.getInternalName() is NOT empty (like "I6"), it must be loaded from memory.
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
         emit("", "add", "eax, " + op1Entry.getValue(), "; eax += " + op1Entry.getValue());
     } else {
-        // Use memory access for all other cases (variables, temporaries, and constants with I# labels)
         emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; eax += " + operand1);
     }
 
     // D. Final Tracking Adjustment
+    // CRITICAL FIX 2: If the operation modifies a non-temporary variable (i.e., a user variable 
+    // or constant that is supposed to hold a fixed value), EAX no longer holds the true symbol value. Clear tracking.
+    // If operand2 was a Temporary (Tn), it is *expected* to be modified, so we let the new temporary (T_new)
+    // take over the tracking in Section F.
     if (!isTemporary(operand2)) {
-        contentsOfAReg.clear();
+         contentsOfAReg.clear();
     }
     
     // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
-    
+    if (isTemporary(operand2)) freeTemp(); // Added: Must free operand2 if it was a temporary.
+
     // === F. Create and Store Result Temp ===
-    string tmp = getTemp();                    
+    string tmp = getTemp();            
     
     // allocate temp storage
     SymbolTableEntry &entry = symbolTable.at(tmp);
-    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setDataType(INTEGER);    // Result of addition is always INTEGER
     entry.setMode(VARIABLE);
     entry.setAlloc(YES);
     if (entry.getInternalName().empty()) entry.setInternalName(tmp);
 
+    // Note: The move operation is redundant if the next instruction immediately uses EAX,
+    // but Stage 1 requires storing the result into a temporary before pushing it.
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
-         "; store result into " + tmp);
+          "; store result into " + tmp);
     
     // Push result temp for parser
     pushOperand(tmp);
@@ -1374,17 +1401,16 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
     contentsOfAReg = tmp;
 }
 
-void Compiler::emitMultiplicationCode(string operand1, string operand2){      // op2 * op1
+void Compiler::emitMultiplicationCode(string operand1, string operand2){       // op2 * op1
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in multiplication (integers required)");
         return;
     }
 
-    // A. Register Spill Management
+    // A. Register Spill Management (Unchanged)
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
-        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+        auto &entry = symbolTable.at(contentsOfAReg); 
         if (entry.getAlloc() == NO) {
-            // allocate manually here since allocateTempStorage() is unavailable
             entry.setAlloc(YES);
             if (entry.getInternalName().empty()) {
                 entry.setInternalName(contentsOfAReg);
@@ -1402,30 +1428,53 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){      //
     if (contentsOfAReg != operand2) {
         emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
         
-        // CRITICAL FIX 1: Conditional tracking
-        if (isTemporary(operand2)) {
-            contentsOfAReg = operand2;
-        } else {
-            contentsOfAReg.clear();
-        }
+        // FIX 1: EAX now holds the value of operand2. Track it, regardless of type.
+        contentsOfAReg = operand2;
     }
 
-    // C. Perform Operation
-    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
-        // Two-operand IMUL: IMUL destination, multiplier (result in destination)
+    // C. Perform Operation - REVISED LOGIC
+    // Check if the right operand is a constant literal value (e.g., "5") *not* yet assigned an internal name (rare in your setup)
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty()) {
+        // Use two-operand IMUL with the immediate value if possible.
+        // NOTE: Standard IMUL syntax for immediate values often uses 'imul eax, eax, value' 
+        //       but let's use the simplest, most compatible syntax for now.
         emit("", "imul", "eax, " + op1Entry.getValue(), "; eax *= " + op1Entry.getValue());
     } else {
-        // One-operand IMUL: IMUL multiplier (result in EDX:EAX, but we only use EAX)
+        // This is the standard path for variables, temporaries, and constants 
+        // already assigned an internal memory location (like [I1]).
         emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; eax *= " + operand1);
     }
     
-    // D. CRITICAL FIX 2: Final Tracking Adjustment
+    // D. Final Tracking Adjustment (Logic is fine after B is fixed)
     if (!isTemporary(operand2)) {
-        contentsOfAReg.clear();
+        // EAX has been modified and no longer holds the clean value of a non-temporary variable/constant.
+        contentsOfAReg.clear(); 
     }
     
     // E. Temporary Cleanup
     if (isTemporary(operand1)) freeTemp();
+    // FIX 3: Free the left operand as well if it was a temporary
+    if (isTemporary(operand2)) freeTemp();
+
+    // === F. FIX 4: Create and Store Result Temp ===
+    string tmp = getTemp();            
+    
+    // Allocate temp storage and set type/mode
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);    
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
+    // Store result into the new temporary (T_new)
+    emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
+          "; store result into " + tmp);
+    
+    // Push result temp for parser
+    pushOperand(tmp);
+    
+    // Register now contains this temp
+    contentsOfAReg = tmp;
 }
 
 void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 / op1
