@@ -479,11 +479,6 @@ void Compiler::execStmts(){     // stage 1, prod 2
         // If next token begins another statement, continue; otherwise break
         if (token == "end" || token == "." || (token.size() == 1 && token[0] == END_OF_FILE)) break;
 
-        // If token looks like start of another statement, continue loop
-        if (isNonKeyId(token) || token == "read" || token == "write") {
-            continue;
-        }
-
         // Unexpected token: try to recover by advancing
         processError("unexpected token in statement list");
         token = nextToken();
@@ -544,6 +539,7 @@ void Compiler::assignStmt(){    // stage 1, prod 4
     if (isTemporary(rhs)) freeTemp();
 
     // token is left at the token after the expression (express() leaves it there)
+    // semicolons consumed by execStmt
 }
 
 void Compiler::readStmt(){      // stage 1, prod 5
@@ -582,6 +578,8 @@ void Compiler::readStmt(){      // stage 1, prod 5
     } else {
         token = nextToken(); // consume ')'
     }
+
+    // semicolons consumed by execStmt
 }
 
 void Compiler::writeStmt(){     // stage 1, prod 7
@@ -620,91 +618,72 @@ void Compiler::writeStmt(){     // stage 1, prod 7
     } else {
         token = nextToken(); // consume ')'
     }
+
+    // semicolons consumed by execStmt
 }
 
 void Compiler::express(){       // stage 1, prod 9
     // express -> term expresses
     term();
-    expresses();
-    // After reduction, top of operand stack holds the expression result
+    expresses();    // handles REL_OP
 }
 
 void Compiler::expresses(){      // stage 1, prod 10
-    // handles additive and logical-or operators: +, -, or
-    while (token == "+" || token == "-" || token == "or" || token == "||") {
-        std::string op = token;
-        token = nextToken(); // consume operator
-        term();              // parse right-hand term
+    // handles REL_OP
+    if (token == "=" || token == "<>" || token == "<=" || token == ">=" || token == "<" || token == ">") {
+            std::string op = token;
+            token = nextToken(); // consume REL_OP
+            
+            term(); // Parse the RHS expression
+    
+            std::string right = popOperand();
+            std::string left = popOperand();
 
-        // Pop operands: right then left
-        std::string right = popOperand();
-        std::string left  = popOperand();
+            // Dispatch to appropriate multiplicative emitter...
+            if (op == "*") {
+                emitMultiplicationCode(right, left);
+            } else if (op == "div") {
+                emitDivisionCode(right, left);
+            } else if (op == "mod") {
+                emitModuloCode(right, left);
+            } else if (op == "and" || op == "&&") {
+                emitAndCode(right, left);
+            }
+                // Otherwise, epsilon reduction
 
-        if (left.empty() || right.empty()) {
-            // ... (error handling) ... GOES HERE!!!!!
-            return;
+            // Cleanup (EAX Chaining)
+            if (isTemporary(right)) freeTemp();
+            pushOperand(left);
         }
-
-    // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
-        if (op == "+") {
-            emitAdditionCode(right, left); // NOTE: Corrected argument order for (op1, op2) where op2 is accumulator
-        } else if (op == "-") {
-            emitSubtractionCode(right, left); // NOTE: Corrected argument order
-        } else if (op == "or" || op == "||") {
-            emitOrCode(right, left); // NOTE: Corrected argument order
-        } else {
-            processError("unknown additive/logical operator: " + op);
-        }
-
-        // --- OPTIMIZED STAGE 1 LOGIC (for in-register accumulation) ---
-        // 1. The accumulated result is in EAX.
-        
-        // 2. Free the right operand temporary if necessary, as it is consumed.
-        if (isTemporary(right)) freeTemp();
-
-        // 3. Push the left operand's name back onto the stack to represent the new result.
-        // The value in EAX is now associated with the name 'left'.
-        pushOperand(left);
-        // --- END OPTIMIZED LOGIC ---
     }
-}
 
-void Compiler::term(){          // stage 1, prod 11
+void Compiler::term(){        // stage 1, prod 11
     // term -> factor terms
     factor();
-    terms();
+    terms();    // handles ADD_LEVEL_OP
 }
 
-void Compiler::terms(){        // stage 1, prod 12
-    // 1. Parse the first factor (The left operand of the first operation, or the whole result)
-    // This call handles the multiplicative chain (via factor() and factors()).
-    factor(); 
-        // The result of the first factor (e.g., T0 * 5) is now on the operand stack.
-
-    // 2. Loop: Handle subsequent additions and subtractions
-    while (token == "+" || token == "-" || token == "or" || token == "||") {
+void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
+    while (token == "+" || token == "-" || token == "or") {
         std::string op = token;
-        token = nextToken(); // consume the operator (+ or -)
-
-        // 3. Parse the next factor (The right operand)
-        factor(); 
-
-        // 4. Pop operands: right then left (order is important!)
-        std::string right = popOperand();
-        std::string left  = popOperand();
+        token = nextToken();
+        factor(); // Parse right-hand factor (additive level RHS)
         
-        // 5. Code Generation (Emitters calculate result and leave it in EAX), additive operators
+        std::string right = popOperand();
+        std::string left = popOperand();
+        
+        // Dispatch to appropriate additive emitter... (Your code for this block is correct)
         if (op == "+") {
-            emitAdditionCode(right, left); 
+            emitAdditionCode(right, left);
         } else if (op == "-") {
             emitSubtractionCode(right, left);
+        } else if (op == "or") {
+            emitOrCode(right, left);
         }
 
-        // 6. Cleanup (EAX Chaining)
-        // Free the temporary storage for the consumed right operand.
+        // Cleanup (EAX Chaining)
         if (isTemporary(right)) freeTemp();
-        // The result is in EAX, tracked by the left operand's name. Push it back.
-        pushOperand(left); 
+        pushOperand(left);
     }
 }
 
@@ -762,28 +741,28 @@ void Compiler::factor(){         // stage 1, prod 13
 
 void Compiler::factors() {
     // FACTORS -> MULT_LEV_OP PART FACTORS | Epsilon
+    // contains loop for *, div, mod, and
+    // must have multiplicative loop
 
     // Loop: Handle subsequent multiplications, divisions, and logical ANDs
-    while (token == "*" || token == "/" || token == "%" || token == "and" || token == "&&") {
+    while (token == "*" || token == "div" || token == "mod" || token == "and") {
         std::string op = token;
-        token = nextToken(); // consume the operator (*, /, %, and)
-
-        // 1. Parse right-hand operand (which is a part)
-        part(); 
+        token = nextToken();
         
-        // 2. Pop operands: right then left (order is important!)
+        part(); // The right operand (RHS)
+        
         std::string right = popOperand();
-        std::string left  = popOperand();
-
-        // 3. Error Handling
+        std::string left = popOperand();
+        
+        // Error Handling
         if (left.empty() || right.empty()) {
             processError("Missing operands for " + op);
             return;
         }
-
-        // 4. Code Generation
+        
+        // Dispatch to appropriate multiplicative emitter...
         if (op == "*") {
-            emitMultiplicationCode(right, left); 
+            emitMultiplicationCode(right, left);
         } else if (op == "/") {
             emitDivisionCode(right, left);  
         } else if (op == "%") {
@@ -792,13 +771,9 @@ void Compiler::factors() {
             emitAndCode(right, left);
         }
         
-        // 5. Cleanup (EAX Chaining logic)
-        // Free the temporary storage for the consumed right operand.
+    // Cleanup (EAX Chaining)
         if (isTemporary(right)) freeTemp();
-        
-        // Push the accumulated result name back onto the stack.
-        // The value is in EAX, tracked by the name 'left'.
-        pushOperand(left); 
+        pushOperand(left);
     }
 }
 
@@ -958,139 +933,163 @@ string Compiler::whichValue(string name){        // which value does name have?
 
 //////////////////// EXPANDED IN STAGE 1
 
-void Compiler::code(string op, string operand1, string operand2){       // generates the code
-    if(op == "program"){
+void Compiler::code(string op, string operand1, string operand2) {
+    bool isBinOp = false; // track if current op is binary
+
+    // -------- SIMPLE DISPATCH --------
+    if (op == "program") {
         emitPrologue(operand1);
-    } else if(op == "end"){
+    } 
+    else if (op == "end") {
         emitEpilogue();
-    } else if(op == "read"){
+    } 
+    else if (op == "read") {
         emitReadCode(operand1);
-    } else if(op == "write"){
+    } 
+    else if (op == "write") {
         emitWriteCode(operand1);
-// --- END OF SIMPLE DISPATCH ---
+    }
 
-// --- START: BINARY/UNARY OPERATION BLOCK (Handles all expression operators) ---
-    } else if(op == "+"){         // Binary operators
-        // **1. Load Left Operand (operand2) into EAX (EAX Chaining)**
-        if (contentsOfAReg != operand2) {
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
+    // -------- BINARY OPERATORS --------
+    else if (op == "+") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
-        }
-        // **2. Dispatch to Emitter (EAX tracking is done AFTER the dispatch)**
         emitAdditionCode(operand1, operand2);
-        } else if(op == "-"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitSubtractionCode(operand1, operand2);
-        } else if(op == "*"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitMultiplicationCode(operand1, operand2);
-        } else if(op == "div" || op == "/"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitDivisionCode(operand1, operand2);
-        } else if(op == "mod" || op == "%"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitModuloCode(operand1, operand2);
-        } else if(op == "and" || op == "&&"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitAndCode(operand1, operand2);
-        } else if(op == "or" || op == "||"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitOrCode(operand1, operand2);
-        } else if(op == "=="){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitEqualityCode(operand1, operand2);
-        } else if(op == "!="){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitInequalityCode(operand1, operand2);
-        } else if(op == "<"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitLessThanCode(operand1, operand2);
-        } else if(op == "<="){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitLessThanOrEqualToCode(operand1, operand2);
-        } else if(op == ">"){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitGreaterThanCode(operand1, operand2);
-        } else if(op == ">="){
-            // Must repeat EAX chaining check for every binary op
-            if (contentsOfAReg != operand2) {
-                emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]", 
-                     "; load " + operand2 + " into eax");
-            }
-            emitGreaterThanOrEqualToCode(operand1, operand2);
-        } else if(op == "neg"){       // Unary operators
-            emitNegationCode(operand1, operand2);
-        } else if(op == "not"){
-            emitNotCode(operand1, operand2);
-        } else if(op == ":="){        // Assignment (must be its own optimized logic)
-            emitAssignCode(operand1, operand2); 
-        // --- END OF DISPATCH ---
+    }
 
-    // **3. Post-Operation Cleanup and Tracking**
-            // **3. Post-Operation Cleanup and Tracking**
-        // a) Update A register tracking: The result is in EAX and is tracked by op2's name.
-        //contentsOfAReg = operand2;
-    // 
-        // b) Free the temporary storage for the consumed right operand (operand1).
-     //   if (isTemporary(operand1)) freeTemp();
-        
-     //   return; // Exit here for binary ops
-    // This part is the trickiest because it must execute ONLY after a binary op.
-    // This block runs ONLY if the previous block was a binary op (like '+', '-', '*')
-    // We cannot use a simple 'if' for a large block like this. 
-    // A helper function `isBinaryOp(op)` is required.
+    else if (op == "-") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitSubtractionCode(operand1, operand2);
+    }
+
+    else if (op == "*") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitMultiplicationCode(operand1, operand2);
+    }
+
+    else if (op == "div" || op == "/") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitDivisionCode(operand1, operand2);
+    }
+
+    else if (op == "mod" || op == "%") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitModuloCode(operand1, operand2);
+    }
+
+    else if (op == "and" || op == "&&") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitAndCode(operand1, operand2);
+    }
+
+    else if (op == "or" || op == "||") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitOrCode(operand1, operand2);
+    }
+
+    else if (op == "==") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitEqualityCode(operand1, operand2);
+    }
+
+    else if (op == "!=") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitInequalityCode(operand1, operand2);
+    }
+
+    else if (op == "<") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitLessThanCode(operand1, operand2);
+    }
+
+    else if (op == "<=") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitLessThanOrEqualToCode(operand1, operand2);
+    }
+
+    else if (op == ">") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitGreaterThanCode(operand1, operand2);
+    }
+
+    else if (op == ">=") {
+        isBinOp = true;
+        if (contentsOfAReg != operand2)
+            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+                 "; load " + operand2 + " into eax");
+        emitGreaterThanOrEqualToCode(operand1, operand2);
+    }
+
+    // -------- UNARY OPERATORS --------
+    else if (op == "neg") {
+        emitNegationCode(operand1, operand2);
+    }
+    else if (op == "not") {
+        emitNotCode(operand1, operand2);
+    }
+
+    // -------- ASSIGNMENT --------
+    else if (op == ":=") {
+        emitAssignCode(operand1, operand2);
+    }
+
+    // -------- ERROR --------
+    else {
+        processError("compiler error: illegal arguments to code(): " + op);
+    }
+
+
+    // =====================================================================
+    //           P O S T - O P E R A T I O N  C L E A N U P
+    // =====================================================================
+    if (isBinOp) {
+        // EAX now contains the result. The result inherits the name of the 
+        // LEFT operand (operand2) for chaining.
+        contentsOfAReg = operand2; // <-- FIXED: Must track the LHS name (operand2)
     
-    // As a simple fix, let's keep the load/cleanup inside the binary op branches for now:
-        // REVISED (Simplified) ACTION: Place the load/cleanup inside each binary op branch:
-
-    // --- FINAL CATCH-ALL ---
-        } else {
-            processError("compiler error: illegal arguments to code(): " + op);
-        }
+        // Right-hand operand (operand1) is consumed -> free temp if needed
+        if (isTemporary(operand1)) // <-- FIXED: Must free the RHS temp (operand1)
+            freeTemp();
+            
+        // Note: The variable 'operand2' is kept in the operand stack by the 
+        // higher-level expression functions (e.g., factors) which will push it back 
+        // after the call to code().
+        return; 
     }
 }
 
