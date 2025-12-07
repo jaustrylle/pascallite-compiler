@@ -86,25 +86,6 @@ bool isIntegerLiteral(std::string s) {
         hasDigit = true;
     }
     return hasDigit;
-}
-
-//////////////////// EXPANDED IN STAGE 1
-
-namespace {
-    void allocateTempStorage(Compiler &compiler, const std::string &temp, storeTypes type = INTEGER) {
-        if (temp.empty()) return;
-        auto &symbolTable = compiler.symbolTable; // assuming symbolTable is accessible
-        if (!symbolTable.count(temp)) {
-            compiler.insert(temp, type, VARIABLE, "", YES, 1);
-            return;
-        }
-        SymbolTableEntry &entry = symbolTable.at(temp);
-        entry.setDataType(type);
-        entry.setMode(VARIABLE);
-        entry.setAlloc(YES);
-        if (entry.getInternalName().empty()) entry.setInternalName(temp);
-    }
-}
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -1294,7 +1275,14 @@ void Compiler::emitAdditionCode(string operand1, string operand2){       // op2 
     
     // === F. Create and Store Result Temp ===
     string tmp = getTemp();                    
-    allocateTempStorage(tmp, INTEGER);        
+    
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store result into " + tmp);
     
@@ -1353,7 +1341,14 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
     
     // === F. Create and Store Result Temp ===
     string tmp = getTemp();
-    allocateTempStorage(tmp, INTEGER);
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+    
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store result into " + tmp);
     
@@ -1453,7 +1448,13 @@ void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 
     
     // === G. Create and Store Result Temp ===
     string tmp = getTemp();
-    allocateTempStorage(tmp, INTEGER);
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
     
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store quotient into " + tmp);
@@ -1510,8 +1511,14 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
     
     // === H. Create and Store Result Temp ===
     string tmp = getTemp();
-    allocateTempStorage(tmp, INTEGER);
-    
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
+
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store remainder into " + tmp);
     
@@ -1547,7 +1554,13 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
 
     // === C. Create result temp ===
     string tmp = getTemp();
-    allocateTempStorage(tmp, INTEGER);
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
 
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store negated value into " + tmp);
@@ -1578,7 +1591,13 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !
 
     // === C. Create result temp ===
     string tmp = getTemp();
-    allocateTempStorage(tmp, BOOLEAN);
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(BOOLEAN);
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
 
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store boolean not into " + tmp);
@@ -1626,7 +1645,13 @@ void Compiler::emitAndCode(string operand1, string operand2){            // op2 
 
     // === E. RESULT TEMP ===
     string tmp = getTemp();
-    allocateTempStorage(tmp, BOOLEAN);
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
 
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store boolean result into " + tmp);
@@ -1672,7 +1697,13 @@ void Compiler::emitOrCode(string operand1, string operand2){             // op2 
 
     // === E. RESULT TEMP ===
     string tmp = getTemp();
-    allocateTempStorage(tmp, BOOLEAN);
+
+    // allocate temp storage
+    SymbolTableEntry &entry = symbolTable.at(tmp);
+    entry.setDataType(INTEGER);   // or BOOLEAN
+    entry.setMode(VARIABLE);
+    entry.setAlloc(YES);
+    if (entry.getInternalName().empty()) entry.setInternalName(tmp);
 
     emit("", "mov", "[" + symbolTable.at(tmp).getInternalName() + "], eax",
          "; store boolean result into " + tmp);
@@ -2219,8 +2250,8 @@ void Compiler::freeTemp() {
     if (contentsOfAReg.empty()) return;
     auto it = symbolTable.find(contentsOfAReg);
     if (it == symbolTable.end()) return;
-    it->second.setAlloc(NO);  // mark as free
-    contentsOfAReg.clear();   // clear A reg tracking
+    it->second.setAlloc(NO);
+    contentsOfAReg.clear();
 }
 
 // 2) Create temp name (no allocation of storage)
@@ -2250,7 +2281,7 @@ bool Compiler::isTemporary(string s) const {
     if (s.size() < 2) return false;
     if (s[0] != 'T') return false;
     for (size_t i = 1; i < s.size(); ++i) {
-        if (!std::isdigit(static_cast<unsigned char>(s[i]))) return false;
+        if (!isdigit(static_cast<unsigned char>(s[i]))) return false;
     }
     return true;
 }
