@@ -1254,20 +1254,25 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
 // =========================================================================
 
 void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
-// Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
-    // if the operand is the special "EAX" tracking name used for chaining.
-
+    // 1. Bypass CHECK_OPERAND_LOGIC if the operand is the special "EAX" tracking name.
     if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
     if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
 
     if (operand1.empty() || operand2.empty()) return;
 
-    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
-        processError("illegal type in addition (integers required)");
-        return;
+    // 2. Bypass type checking if an operand is the special "EAX" name.
+    if (operand1 != "EAX" && operand2 != "EAX") {
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in addition (integers required)");
+            return;
+        }
     }
 
     // A. Register Spill Management: only spill an unrelated temp
+    if (contentsOfAReg != "EAX" && !contentsOfAReg.empty() && isTemporary(contentsOfAReg)
+    && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+    
+    auto &spillEntry = symbolTable.at(contentsOfAReg); // This lookup is now safe.
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)
         && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         auto &spillEntry = symbolTable.at(contentsOfAReg);
@@ -1281,18 +1286,23 @@ void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
         contentsOfAReg.clear();
     }
 
+    // Get entry for the right operand (operand1), which should always be a symbol/literal name.
     const auto &op1Entry = symbolTable.at(operand1); // right
-    const auto &op2Entry = symbolTable.at(operand2); // left
-
+    
     // B. Load left operand into EAX if not already there
-    if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
-        // FIX: Change 'leftEntry' to 'op2Entry' (already declared above)
-        if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
-            emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
-        else
-            emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
-        // DO NOT change contentsOfAReg here.
-    }
+    if (operand2 != "EAX") { // CRITICAL FIX: Only attempt symbol lookup/load if it's a memory operand
+        const auto &op2Entry = symbolTable.at(operand2); // left (safely declared inside this block)
+        
+        if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
+            if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
+                emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
+            else
+                emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+            // DO NOT change contentsOfAReg here.
+        }
+    } 
+    // If operand2 IS "EAX", we skip this block, correctly leaving the previous result in EAX.
+
 
     // C. Perform addition (immediate if literal without internalName)
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
@@ -1305,24 +1315,30 @@ void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
 }
 
 void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - op1
-    // Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
-    // if the operand is the special "EAX" tracking name used for chaining.
-
+    // 1. Bypass CHECK_OPERAND_LOGIC if the operand is the special "EAX" tracking name.
     if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
     if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
 
     if (operand1.empty() || operand2.empty()) return;
 
-    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
-        processError("illegal type in subtraction (integers required)");
-        return;
+    // 2. Bypass type checking if an operand is the special "EAX" name.
+    if (operand1 != "EAX" && operand2 != "EAX") {
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in subtraction (integers required)");
+            return;
+        }
     }
-
-    // A. Spill management: only spill an unrelated temp
+    
+    // A. Register Spill Management: only spill an unrelated temp
+    if (contentsOfAReg != "EAX" && !contentsOfAReg.empty() && isTemporary(contentsOfAReg)
+    && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+    
+    auto &spillEntry = symbolTable.at(contentsOfAReg); // This lookup is now safe.
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)
         && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         auto &spillEntry = symbolTable.at(contentsOfAReg);
         if (spillEntry.getAlloc() == NO) {
+            // allocate inline (no header change)
             spillEntry.setAlloc(YES);
             if (spillEntry.getInternalName().empty()) spillEntry.setInternalName(contentsOfAReg);
         }
@@ -1331,18 +1347,22 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - o
         contentsOfAReg.clear();
     }
 
+    // Get entry for the right operand (operand1), which should always be a symbol/literal name.
     const auto &op1Entry = symbolTable.at(operand1); // right
-    const auto &op2Entry = symbolTable.at(operand2); // left
 
     // B. Load left operand into EAX if not already there
-    if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
-        // FIX: Change 'leftEntry' to 'op2Entry' (already declared above)
-        if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
-            emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
-        else
-            emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
-        // DO NOT change contentsOfAReg here.
-    }
+    if (operand2 != "EAX") { // CRITICAL FIX: Only attempt symbol lookup/load if it's a memory operand
+        const auto &op2Entry = symbolTable.at(operand2); // left (safely declared inside this block)
+        
+        if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
+            if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
+                emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
+            else
+                emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+            // DO NOT change contentsOfAReg here.
+        }
+    } 
+    // If operand2 IS "EAX", we skip this block, correctly leaving the previous result in EAX.
 
     // C. Perform subtraction
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
@@ -1355,186 +1375,182 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - o
 }
 
 void Compiler::emitMultiplicationCode(string operand1, string operand2) { // op2 * op1
-// Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
-    // if the operand is the special "EAX" tracking name used for chaining.
-
+    // 1. Bypass CHECK_OPERAND_LOGIC if the operand is the special "EAX" tracking name.
     if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
     if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
 
     if (operand1.empty() || operand2.empty()) return;
 
-    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
-        processError("illegal type in multiplication (integers required)");
-        return;
+    // 2. Bypass type checking if an operand is the special "EAX" name.
+    if (operand1 != "EAX" && operand2 != "EAX") {
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in multiplication (integers required)");
+            return;
+        }
     }
 
-    // A. Spill only an unrelated temp
+    // A. Register Spill Management: only spill an unrelated temp
+    if (contentsOfAReg != "EAX" && !contentsOfAReg.empty() && isTemporary(contentsOfAReg)
+    && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+    
+    auto &spillEntry = symbolTable.at(contentsOfAReg); // This lookup is now safe.
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)
         && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         auto &spillEntry = symbolTable.at(contentsOfAReg);
         if (spillEntry.getAlloc() == NO) {
+            // allocate inline (no header change)
             spillEntry.setAlloc(YES);
             if (spillEntry.getInternalName().empty()) spillEntry.setInternalName(contentsOfAReg);
         }
-        emit("", "mov", "[" + spillEntry.getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
+        emit("", "mov", "[" + spillEntry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    // B. Load multiplicand (operand2) into EAX if not already there
-    const auto &leftEntry = symbolTable.at(operand2);
-    if (contentsOfAReg != operand2) {
-        if (leftEntry.getMode() == CONSTANT && leftEntry.getInternalName().empty())
-            emit("", "mov", "eax, " + leftEntry.getValue(), "; load immediate " + leftEntry.getValue());
-        else
-            emit("", "mov", "eax, [" + leftEntry.getInternalName() + "]", "; load " + operand2 + " into eax");
-
-        if (isTemporary(operand2)) contentsOfAReg = operand2;
-        else contentsOfAReg.clear();
-    }
+    // Get entry for the right operand (operand1), which should always be a symbol/literal name.
+    const auto &op1Entry = symbolTable.at(operand1); // right
+    
+    // B. Load left operand into EAX if not already there
+    if (operand2 != "EAX") { // CRITICAL FIX: Only attempt symbol lookup/load if it's a memory operand
+        const auto &op2Entry = symbolTable.at(operand2); // left (safely declared inside this block)
+        
+        if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
+            if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
+                emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
+            else
+                emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+            // DO NOT change contentsOfAReg here.
+        }
+    } 
+    // If operand2 IS "EAX", we skip this block, correctly leaving the previous result in EAX.
 
     // C. Multiply using operand1 (right) as multiplier
-    const auto &rightEntry = symbolTable.at(operand1);
-    if (rightEntry.getMode() == CONSTANT && rightEntry.getInternalName().empty() && isInteger(rightEntry.getValue())) {
-        emit("", "imul", "eax, " + rightEntry.getValue(), "; eax *= " + rightEntry.getValue());
+    // Change rightEntry to op1Entry in the condition and emit calls:
+    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
+        emit("", "imul", "eax, " + op1Entry.getValue(), "; eax *= " + op1Entry.getValue());
     } else {
-        emit("", "imul", "dword [" + rightEntry.getInternalName() + "]", "; eax *= " + operand1);
+        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; eax *= " + operand1);
     }
-
-    // D. Create and store result temp (allocate inline, only once)
-    string tmp = getTemp(); // alloc==NO initially
-    SymbolTableEntry &tmpEntry = symbolTable.at(tmp);
-    tmpEntry.setDataType(INTEGER);
-    tmpEntry.setMode(VARIABLE);
-    tmpEntry.setAlloc(YES);
-    if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(tmp);
-
-    emit("", "mov", "[" + tmpEntry.getInternalName() + "], eax", "; store multiplication result into " + tmp);
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
-
-    // E. Free multiplier temp by name if you know it's safe (optional)
-    // if (isTemporary(operand1)) freeTempByName(operand1);
+    contentsOfAReg = "EAX"; // Signal that the result of the operation is in EAX
 }
 
 void Compiler::emitDivisionCode(string operand1, string operand2){ // op2 / op1
-    // Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
-    // if the operand is the special "EAX" tracking name used for chaining.
-
+    // 1. Bypass CHECK_OPERAND_LOGIC if the operand is the special "EAX" tracking name.
     if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
     if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
 
     if (operand1.empty() || operand2.empty()) return;
 
-    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
-        processError("illegal type in division (integers required)");
-        return;
+    // 2. Bypass type checking if an operand is the special "EAX" name.
+    if (operand1 != "EAX" && operand2 != "EAX") {
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in division (integers required)");
+            return;
+        }
     }
-
-    // A. Spill only an unrelated temp
+    // A. Register Spill Management: only spill an unrelated temp
+    if (contentsOfAReg != "EAX" && !contentsOfAReg.empty() && isTemporary(contentsOfAReg)
+    && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+    
+    auto &spillEntry = symbolTable.at(contentsOfAReg); // This lookup is now safe.
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)
         && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         auto &spillEntry = symbolTable.at(contentsOfAReg);
         if (spillEntry.getAlloc() == NO) {
+            // allocate inline (no header change)
             spillEntry.setAlloc(YES);
             if (spillEntry.getInternalName().empty()) spillEntry.setInternalName(contentsOfAReg);
         }
-        emit("", "mov", "[" + spillEntry.getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
+        emit("", "mov", "[" + spillEntry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    // B. Load dividend (operand2) into EAX if not already there
-    const auto &leftEntry = symbolTable.at(operand2);
-    if (contentsOfAReg != operand2) {
-        if (leftEntry.getMode() == CONSTANT && leftEntry.getInternalName().empty())
-            emit("", "mov", "eax, " + leftEntry.getValue(), "; load immediate " + leftEntry.getValue());
-        else
-            emit("", "mov", "eax, [" + leftEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
-        contentsOfAReg = operand2;
-    }
+    // Get entry for the right operand (operand1), which should always be a symbol/literal name.
+    const auto &op1Entry = symbolTable.at(operand1); // right
+    
+    // B. Load left operand into EAX if not already there
+    if (operand2 != "EAX") { // CRITICAL FIX: Only attempt symbol lookup/load if it's a memory operand
+        const auto &op2Entry = symbolTable.at(operand2); // left (safely declared inside this block)
+        
+        if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
+            if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
+                emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
+            else
+                emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+            // DO NOT change contentsOfAReg here.
+        }
+    } 
+    // If operand2 IS "EAX", we skip this block, correctly leaving the previous result in EAX.
 
     // C. Sign-extend and divide
-    emit("", "cdq", "", "; sign-extend eax into edx:eax for division");
+    emit("", "cdq", "", "; sign-extend eax into edx:eax for idiv/idiv");
     contentsOfAReg.clear(); // edx:eax special state
 
-    const auto &rightEntry = symbolTable.at(operand1);
-    emit("", "idiv", "dword [" + rightEntry.getInternalName() + "]", "; idiv by " + operand1);
-
-    // D. Create and store quotient temp
-    string tmp = getTemp();
-    SymbolTableEntry &tmpEntry = symbolTable.at(tmp);
-    tmpEntry.setDataType(INTEGER);
-    tmpEntry.setMode(VARIABLE);
-    tmpEntry.setAlloc(YES);
-    if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(tmp);
-
-    emit("", "mov", "[" + tmpEntry.getInternalName() + "], eax", "; store quotient into " + tmp);
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
-
-    // E. Free divisor temp by name if safe (optional)
-    // if (isTemporary(operand1)) freeTempByName(operand1);
+    // Change rightEntry to op1Entry in the emit call:
+    emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
+    contentsOfAReg = "EAX"; // Signal that the result of the operation is in EAX
 }
 
 void Compiler::emitModuloCode(string operand1, string operand2){ // op2 % op1
-    // Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
-    // if the operand is the special "EAX" tracking name used for chaining.
-
+    // 1. Bypass CHECK_OPERAND_LOGIC if the operand is the special "EAX" tracking name.
     if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
     if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
 
     if (operand1.empty() || operand2.empty()) return;
 
-    if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
-        processError("illegal type in modulo (integers required)");
-        return;
+    // 2. Bypass type checking if an operand is the special "EAX" name.
+    if (operand1 != "EAX" && operand2 != "EAX") {
+        if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
+            processError("illegal type in modulo (integers required)");
+            return;
+        }
     }
 
-    // A. Spill only an unrelated temp
+    // A. Register Spill Management: only spill an unrelated temp
+    if (contentsOfAReg != "EAX" && !contentsOfAReg.empty() && isTemporary(contentsOfAReg)
+    && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
+    
+    auto &spillEntry = symbolTable.at(contentsOfAReg); // This lookup is now safe.
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)
         && contentsOfAReg != operand1 && contentsOfAReg != operand2) {
         auto &spillEntry = symbolTable.at(contentsOfAReg);
         if (spillEntry.getAlloc() == NO) {
+            // allocate inline (no header change)
             spillEntry.setAlloc(YES);
             if (spillEntry.getInternalName().empty()) spillEntry.setInternalName(contentsOfAReg);
         }
-        emit("", "mov", "[" + spillEntry.getInternalName() + "], eax", "; spill A reg (" + contentsOfAReg + ")");
+        emit("", "mov", "[" + spillEntry.getInternalName() + "], eax",
+             "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
 
-    // B. Load dividend (operand2) into eax if not already there
-    const auto &leftEntry = symbolTable.at(operand2);
-    if (contentsOfAReg != operand2) {
-        if (leftEntry.getMode() == CONSTANT && leftEntry.getInternalName().empty())
-            emit("", "mov", "eax, " + leftEntry.getValue(), "; load immediate " + leftEntry.getValue());
-        else
-            emit("", "mov", "eax, [" + leftEntry.getInternalName() + "]", "; load dividend " + operand2 + " into eax");
-        contentsOfAReg = operand2;
-    }
+    // Get entry for the right operand (operand1), which should always be a symbol/literal name.
+    const auto &op1Entry = symbolTable.at(operand1); // right
+    
+    // B. Load left operand into EAX if not already there
+    if (operand2 != "EAX") { // CRITICAL FIX: Only attempt symbol lookup/load if it's a memory operand
+        const auto &op2Entry = symbolTable.at(operand2); // left (safely declared inside this block)
+        
+        if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
+            if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
+                emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
+            else
+                emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+            // DO NOT change contentsOfAReg here.
+        }
+    } 
+    // If operand2 IS "EAX", we skip this block, correctly leaving the previous result in EAX.
 
     // C. Sign-extend and divide
     emit("", "cdq", "", "; sign-extend eax into edx:eax for idiv");
     contentsOfAReg.clear(); // edx:eax special state
 
-    const auto &rightEntry = symbolTable.at(operand1);
-    emit("", "idiv", "dword [" + rightEntry.getInternalName() + "]", "; idiv by " + operand1);
-
+    emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
+    
     // D. Move remainder into eax
     emit("", "mov", "eax, edx", "; move remainder (edx) to accumulator (eax)");
-
-    // E. Create and store result temp (allocate inline)
-    string tmp = getTemp(); // alloc==NO initially
-    SymbolTableEntry &tmpEntry = symbolTable.at(tmp);
-    tmpEntry.setDataType(INTEGER);
-    tmpEntry.setMode(VARIABLE);
-    tmpEntry.setAlloc(YES);
-    if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(tmp);
-
-    emit("", "mov", "[" + tmpEntry.getInternalName() + "], eax", "; store remainder into " + tmp);
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
-
-    // Optional: free divisor temp by name if you know it's safe
-    // if (isTemporary(operand1)) freeTempByName(operand1);
+    contentsOfAReg = "EAX"; // Signal that the result of the operation is in EAX
 }
 
 // ------------------------------------------------------
