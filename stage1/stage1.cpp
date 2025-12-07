@@ -24,11 +24,12 @@ stage1.cpp
 
 /////////////////////////////////////////////////////////////////////////////
 
-// ensureOperand macro
-#define ensureOperand(name) \
+// Define this near the top of stage1.cpp.
+#define CHECK_OPERAND_LOGIC(name) \
     ([&]() -> std::string { \
         const std::string &_n = (name); \
         if (_n.empty()) return std::string(); \
+                                           \
         if (symbolTable.count(_n)) return _n; \
         if (isInteger(_n) || isBoolean(_n) || isLiteral(_n)) { \
             storeTypes _t = whichType(_n); \
@@ -103,23 +104,6 @@ bool isIntegerLiteral(std::string s) {
         hasDigit = true;
     }
     return hasDigit;
-}
-
-// Ensure operand exists in symbol table; insert literal constants if needed.
-// Returns the operand name or "" on error.
-std::string Compiler::ensureOperand(const std::string &name) {
-    if (name.empty()) return std::string();
-    if (symbolTable.count(name)) return name;
-
-    // If it's a literal (integer or boolean) insert it as a CONSTANT with alloc==YES
-    if (isInteger(name) || isBoolean(name) || isLiteral(name)) {
-        storeTypes t = whichType(name);
-        insert(name, t, CONSTANT, name, YES, 1); // make literal addressable
-        return name;
-    }
-
-    processError("reference to undefined symbol: " + name);
-    return std::string();
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -676,16 +660,31 @@ void Compiler::expresses(){      // stage 1, prod 10
             processError("unknown additive/logical operator: " + op);
         }
 
-        // --- OPTIMIZED STAGE 1 LOGIC (for in-register accumulation) ---
-        // 1. The accumulated result is in EAX.
-        
-        // 2. Free the right operand temporary if necessary, as it is consumed.
-        if (isTemporary(right)) freeTemp();
+        // 1. Free the right operand temporary (if used) as it is consumed.
+        if (isTemporary(right)) freeTemp(); 
 
-        // 3. Push the left operand's name back onto the stack to represent the new result.
-        // The value in EAX is now associated with the name 'left'.
-        pushOperand(left);
-        // --- END OPTIMIZED LOGIC ---
+        // 2. Generate a new temporary variable to hold the result (which is currently in EAX).
+        std::string dest = getTemp();
+
+        // 3. Emit code to store the EAX result into the newly generated temporary.
+        // NOTE: The 'getTemp()' function should handle allocating the SymbolTableEntry with alloc=NO initially.
+        // The emit function itself should inline-allocate if the SymbolTableEntry is not found/allocated.
+        // The implementation for unary ops shows how to handle the allocation inline:
+        // SymbolTableEntry &tmpEntry = symbolTable.at(dest);
+        // tmpEntry.setDataType(INTEGER); // or BOOLEAN for logical ops
+        // tmpEntry.setMode(VARIABLE);
+        // tmpEntry.setAlloc(YES);
+        // if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(dest);
+        
+        // Assuming getTemp/insert sets up the entry, the following line should be safe:
+        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
+
+        // 4. Free the left operand temporary (if used) as it is consumed.
+        if (isTemporary(left)) freeTemp();
+
+        // 5. Update A register tracking and push the result.
+        contentsOfAReg = dest;
+        pushOperand(dest);
     }
 }
 
@@ -724,16 +723,31 @@ void Compiler::terms(){          // stage 1, prod 12
             processError("unknown multiplicative/logical operator: " + op);
         }
 
-        // --- OPTIMIZED STAGE 1 LOGIC (for in-register accumulation) ---
-        // 1. The accumulated result is in EAX.
-        
-        // 2. Free the right operand temporary if necessary, as it is consumed.
-        if (isTemporary(right)) freeTemp();
+        // 1. Free the right operand temporary (if used) as it is consumed.
+        if (isTemporary(right)) freeTemp(); 
 
-        // 3. Push the left operand's name back onto the stack to represent the new result.
-        // The value in EAX is now associated with the name 'left'.
-        pushOperand(left);
-        // --- END OPTIMIZED LOGIC ---
+        // 2. Generate a new temporary variable to hold the result (which is currently in EAX).
+        std::string dest = getTemp();
+
+        // 3. Emit code to store the EAX result into the newly generated temporary.
+        // NOTE: The 'getTemp()' function should handle allocating the SymbolTableEntry with alloc=NO initially.
+        // The emit function itself should inline-allocate if the SymbolTableEntry is not found/allocated.
+        // The implementation for unary ops shows how to handle the allocation inline:
+        // SymbolTableEntry &tmpEntry = symbolTable.at(dest);
+        // tmpEntry.setDataType(INTEGER); // or BOOLEAN for logical ops
+        // tmpEntry.setMode(VARIABLE);
+        // tmpEntry.setAlloc(YES);
+        // if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(dest);
+        
+        // Assuming getTemp/insert sets up the entry, the following line should be safe:
+        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
+
+        // 4. Free the left operand temporary (if used) as it is consumed.
+        if (isTemporary(left)) freeTemp();
+
+        // 5. Update A register tracking and push the result.
+        contentsOfAReg = dest;
+        pushOperand(dest);
     }
 }
 
@@ -1260,8 +1274,8 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
 
 void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
     // Ensure operands exist (insert literals if needed)
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1324,8 +1338,8 @@ void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
 
 void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - op1
     // Ensure operands exist
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1385,8 +1399,8 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - o
 
 void Compiler::emitMultiplicationCode(string operand1, string operand2) { // op2 * op1
     // Ensure operands exist (insert literals if needed)
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1443,8 +1457,8 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2) { // op2
 }
 
 void Compiler::emitDivisionCode(string operand1, string operand2){ // op2 / op1
-    operand1 = ensureOperand(operand1); // divisor (right)
-    operand2 = ensureOperand(operand2); // dividend (left)
+    operand1 = CHECK_OPERAND_LOGIC(operand1); // divisor (right)
+    operand2 = CHECK_OPERAND_LOGIC(operand2); // dividend (left)
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1499,8 +1513,8 @@ void Compiler::emitDivisionCode(string operand1, string operand2){ // op2 / op1
 
 void Compiler::emitModuloCode(string operand1, string operand2){ // op2 % op1
     // Ensure operands exist
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1561,7 +1575,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){ // op2 % op1
 // ------------------------------------------------------
 
 void Compiler::emitNegationCode(string operand1, string /*operand2*/){ // -op1
-    operand1 = ensureOperand(operand1);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
     if (operand1.empty()) return;
 
     if (whichType(operand1) != INTEGER) {
@@ -1603,7 +1617,7 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){ // -op1
 }
 
 void Compiler::emitNotCode(string operand1, string /*operand2*/) {
-    operand1 = ensureOperand(operand1);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
     if (operand1.empty()) return;
 
     if (whichType(operand1) != BOOLEAN) {
@@ -1651,8 +1665,8 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/) {
 }
 
 void Compiler::emitAndCode(string operand1, string operand2) {
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != BOOLEAN || whichType(operand2) != BOOLEAN) {
@@ -1707,8 +1721,8 @@ void Compiler::emitAndCode(string operand1, string operand2) {
 }
 
 void Compiler::emitOrCode(string operand1, string operand2) {
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != BOOLEAN || whichType(operand2) != BOOLEAN) {
@@ -1768,8 +1782,8 @@ void Compiler::emitOrCode(string operand1, string operand2) {
 
 void Compiler::emitEqualityCode(string operand1, string operand2){ // op2 == op1
     // Ensure operands exist (insert literals if needed)
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1837,8 +1851,8 @@ void Compiler::emitEqualityCode(string operand1, string operand2){ // op2 == op1
 
 void Compiler::emitInequalityCode(string operand1, string operand2){ // op2 != op1
     // Ensure operands exist
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1905,8 +1919,8 @@ void Compiler::emitInequalityCode(string operand1, string operand2){ // op2 != o
 
 void Compiler::emitLessThanCode(string operand1, string operand2){ // op2 < op1
     // Ensure operands exist
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1974,8 +1988,8 @@ void Compiler::emitLessThanCode(string operand1, string operand2){ // op2 < op1
 
 void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){ // op2 <= op1
     // Ensure operands exist
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -2042,8 +2056,8 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){ // o
 
 void Compiler::emitGreaterThanCode(string operand1, string operand2){ // op2 > op1
     // Ensure operands exist
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -2110,8 +2124,8 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){ // op2 > o
 
 void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){ // op2 >= op1
     // Ensure operands exist
-    operand1 = ensureOperand(operand1);
-    operand2 = ensureOperand(operand2);
+    operand1 = CHECK_OPERAND_LOGIC(operand1);
+    operand2 = CHECK_OPERAND_LOGIC(operand2);
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
