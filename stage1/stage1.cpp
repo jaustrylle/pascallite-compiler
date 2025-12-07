@@ -36,6 +36,7 @@ static bool begChar = true;
 const std::string END_FILE_TOKEN = std::string(1, END_OF_FILE);
 
 /////////////////////////////////////////////////////////////////////////////
+
 // --- Global Helper Function Implementations ---
 
 std::string getTime() {
@@ -86,6 +87,7 @@ bool isIntegerLiteral(std::string s) {
         hasDigit = true;
     }
     return hasDigit;
+}
 
 /////////////////////////////////////////////////////////////////////////////
 
