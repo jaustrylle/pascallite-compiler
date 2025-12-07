@@ -693,13 +693,13 @@ void Compiler::terms(){          // stage 1, prod 12
 
         // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
         if (op == "*") {
-            emitMultiplicationCode(right, left); // NOTE: Corrected argument order
+            emitMultiplicationCode(right, left);     // PUSHES RESULT (e.g., T1)
         } else if (op == "/") {
-            emitDivisionCode(right, left); // NOTE: Corrected argument order
+            emitDivisionCode(right, left); 
         } else if (op == "%") {
-            emitModuloCode(right, left); // NOTE: Corrected argument order
+            emitModuloCode(right, left); 
         } else if (op == "and" || op == "&&") {
-            emitAndCode(right, left); // NOTE: Corrected argument order
+            emitAndCode(right, left);
         } else {
             processError("unknown multiplicative/logical operator: " + op);
         }
@@ -708,11 +708,11 @@ void Compiler::terms(){          // stage 1, prod 12
         // 1. The accumulated result is in EAX.
         
         // 2. Free the right operand temporary if necessary, as it is consumed.
+            // does nothing if rightOp is a const int, leftOp should be freed by emitter as appropriate
+            //       If T0 is not freed in emitMultiplicationCode, move the freeTemp(T0) here.
         if (isTemporary(right)) freeTemp();
+        // if (isTemporary(left)) freeTemp(); // <-- If freeing T0 here instead of in the emitter
 
-        // 3. Push the left operand's name back onto the stack to represent the new result.
-        // The value in EAX is now associated with the name 'left'.
-        pushOperand(left);
         // --- END OPTIMIZED LOGIC ---
     }
 }
@@ -994,6 +994,8 @@ string Compiler::popOperator(){   // pop name from operatorStk
     return top;
 }
 
+// where literal constants are converted into symbol table entries and assigned properties
+// DOES NOT perform the internal name assignment though
 void Compiler::pushOperand(string name){          // push name onto operandStk
     // If name is a literal and not already in the symbol table, create an entry
     if (isLiteral(name) || isInteger(name) || isBoolean(name)) {
@@ -1253,7 +1255,7 @@ void Compiler::emitAssignCode(string operand1, string operand2){     // op2 = op
 // Conditional register tracking for binary operations (op2 OP op1)
 // =========================================================================
 
-void Compiler::emitAdditionCode(string operand1, string operand2){    // op2 + op1
+void Compiler::emitAdditionCode(string operand1, string operand2){    // op2 + op1, BINARY
     // ... (Type Checking and Register Spill Management - Section A - unchanged) ...
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in addition (integers required)");
@@ -1401,7 +1403,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
     contentsOfAReg = tmp;
 }
 
-void Compiler::emitMultiplicationCode(string operand1, string operand2){       // op2 * op1
+void Compiler::emitMultiplicationCode(string operand1, string operand2){       // op2 * op1, BINARY
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in multiplication (integers required)");
         return;
@@ -1616,7 +1618,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 // LOGICAL OPERATORS (with conditional tracking)
 // ------------------------------------------------------
 
-void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -op1
+void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -op1, UNARY
     if (!symbolTable.count(operand1)) {
         processError("reference to undefined symbol in negation: " + operand1);
         return;
@@ -1668,7 +1670,7 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
     contentsOfAReg = tmp;
 }
 
-void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !op1
+void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !op1, UNARY
     if (!symbolTable.count(operand1)) {
         processError("reference to undefined symbol in not: " + operand1);
         return;
