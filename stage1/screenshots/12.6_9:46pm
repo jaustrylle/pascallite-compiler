@@ -1,0 +1,62 @@
+; SERENA REESE, AMIRAN FIELDS           Sat Dec  6 21:44:45 2025
+%INCLUDE "Along32.inc"
+%INCLUDE "Macros_Along.inc"
+
+SECTION .text
+global  _start                          ; program stage1no101
+
+_start:
+        call    ReadInt                 ; read int; value placed in eax
+        mov     [I2], eax               ; store eax at a
+        call    ReadInt                 ; read int; value placed in eax
+        mov     [I3], eax               ; store eax at b
+        call    ReadInt                 ; read int; value placed in eax
+        mov     [I4], eax               ; store eax at c
+        mov     eax, [I2]               ; load a into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        mov     eax, [I3]               ; load b into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        mov     eax, [I5]               ; load 3 into eax
+        add     eax, [I6]               ; eax += 34
+        mov     [T0], eax               ; store result into T0
+        imul    dword [I5]              ; eax *= 3
+        mov     [I2], eax               ; store eax into a
+        mov     eax, [I2]               ; load a into eax
+        add     eax, [I2]               ; eax += a
+        mov     [T1], eax               ; store result into T1
+        mov     [T1], eax               ; spill A reg (T1)
+        mov     eax, [I2]               ; load a into eax
+        mov     [I3], eax               ; store eax into b
+        mov     eax, [I1]               ; load five into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        mov     eax, [I2]               ; load a into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        mov     eax, [I3]               ; load b into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        mov     eax, [I4]               ; load c into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        mov     eax, [I1]               ; load five into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        mov     eax, [I0]               ; load zero into eax
+        call    WriteInt                ; write eax
+        call    Crlf                    ; newline
+        Exit    {0}
+
+SECTION .data
+I5      dd      3                       ; 3
+I6      dd      34                      ; 34
+I1      dd      5                       ; five
+I0      dd      0                       ; zero
+
+SECTION .bss
+T0      resd    1                       ; T0
+T1      resd    1                       ; T1
+I3      resd    1                       ; b
+I4      resd    1                       ; c
