@@ -634,57 +634,48 @@ void Compiler::express(){       // stage 1, prod 9
 }
 
 void Compiler::expresses(){      // stage 1, prod 10
-    // handles additive and logical-or operators: +, -, or
+    // NOTE: An initial call to term() MUST happen before this loop begins
+    // (This is usually done in the calling production, e.g., in assignment or write statement)
+    
+    std::string op = ""; 
+
     while (token == "+" || token == "-" || token == "or" || token == "||") {
-        std::string op = token;
+        op = token;
         token = nextToken(); // consume operator
-        term();              // parse right-hand term
+        term();             // parse right-hand term
 
+        // --- START BINARY OPERATION LOGIC (MOVE THIS INSIDE THE LOOP) ---
         // Pop operands: right then left
-        std::string right = popOperand();
-        std::string left  = popOperand();
+        std::string rightOpName = popOperand();
+        std::string leftOpName = popOperand();
 
-        if (left.empty() || right.empty()) {
-            // ... (error handling) ... GOES HERE!!!!!
+        if (leftOpName.empty() || rightOpName.empty()) {
             return;
         }
 
-    // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
+        // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
         if (op == "+") {
-            emitAdditionCode(right, left); // NOTE: Corrected argument order for (op1, op2) where op2 is accumulator
+            emitAdditionCode(rightOpName, leftOpName);
         } else if (op == "-") {
-            emitSubtractionCode(right, left); // NOTE: Corrected argument order
+            emitSubtractionCode(rightOpName, leftOpName);
         } else if (op == "or" || op == "||") {
-            emitOrCode(right, left); // NOTE: Corrected argument order
+            emitOrCode(rightOpName, leftOpName);
         } else {
             processError("unknown additive/logical operator: " + op);
         }
 
         // 1. Free the right operand temporary (if used) as it is consumed.
-        if (isTemporary(right)) freeTemp(); 
+        if (isTemporary(rightOpName)) freeTemp();
 
-        // 2. Generate a new temporary variable to hold the result (which is currently in EAX).
-        std::string dest = getTemp();
-
-        // 3. Emit code to store the EAX result into the newly generated temporary.
-        // NOTE: The 'getTemp()' function should handle allocating the SymbolTableEntry with alloc=NO initially.
-        // The emit function itself should inline-allocate if the SymbolTableEntry is not found/allocated.
-        // The implementation for unary ops shows how to handle the allocation inline:
-        // SymbolTableEntry &tmpEntry = symbolTable.at(dest);
-        // tmpEntry.setDataType(INTEGER); // or BOOLEAN for logical ops
-        // tmpEntry.setMode(VARIABLE);
-        // tmpEntry.setAlloc(YES);
-        // if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(dest);
+        // 2. Free the left operand temporary (if used) as it is consumed.
+        if (isTemporary(leftOpName)) freeTemp();
+            
+        // 3. Update A register tracking and push the result ("EAX").
+        contentsOfAReg = "EAX";
         
-        // Assuming getTemp/insert sets up the entry, the following line should be safe:
-        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
-
-        // 4. Free the left operand temporary (if used) as it is consumed.
-        if (isTemporary(left)) freeTemp();
-
-        // 5. Update A register tracking and push the result.
-        contentsOfAReg = dest;
-        pushOperand(dest);
+        // 4. PUSH the new result ("EAX") back onto the operand stack for the next iteration.
+        pushOperand("EAX");
+        // --- END BINARY OPERATION LOGIC ---
     }
 }
 
@@ -696,58 +687,48 @@ void Compiler::term(){          // stage 1, prod 11
 
 void Compiler::terms(){          // stage 1, prod 12
     // handles multiplicative and logical-and operators: *, /, %, and
+    std::string op = "";
     while (token == "*" || token == "/" || token == "%" || token == "and" || token == "&&") {
-        std::string op = token;
+        op = token;
         token = nextToken(); // consume operator
         factor();            // parse right-hand factor
 
         // Pop operands: right then left
-        std::string right = popOperand();
-        std::string left  = popOperand();
+        std::string rightOpName = popOperand();
+        std::string leftOpName  = popOperand();
 
-        if (left.empty() || right.empty()) {
+        if (leftOpName.empty() || rightOpName.empty()) {
             // ... (error handling) ... GOES HERE!!!!
             return;
         }
 
         // Apply operator: Emitter must calculate 'left op right', leave result in EAX.
         if (op == "*") {
-            emitMultiplicationCode(right, left); // NOTE: Corrected argument order
+            emitMultiplicationCode(rightOpName, leftOpName); // NOTE: Corrected argument order
         } else if (op == "/") {
-            emitDivisionCode(right, left); // NOTE: Corrected argument order
+            emitDivisionCode(rightOpName, leftOpName); // NOTE: Corrected argument order
         } else if (op == "%") {
-            emitModuloCode(right, left); // NOTE: Corrected argument order
+            emitModuloCode(rightOpName, leftOpName); // NOTE: Corrected argument order
         } else if (op == "and" || op == "&&") {
-            emitAndCode(right, left); // NOTE: Corrected argument order
+            emitAndCode(rightOpName, leftOpName); // NOTE: Corrected argument order
         } else {
             processError("unknown multiplicative/logical operator: " + op);
         }
 
         // 1. Free the right operand temporary (if used) as it is consumed.
-        if (isTemporary(right)) freeTemp(); 
-
-        // 2. Generate a new temporary variable to hold the result (which is currently in EAX).
-        std::string dest = getTemp();
-
-        // 3. Emit code to store the EAX result into the newly generated temporary.
-        // NOTE: The 'getTemp()' function should handle allocating the SymbolTableEntry with alloc=NO initially.
-        // The emit function itself should inline-allocate if the SymbolTableEntry is not found/allocated.
-        // The implementation for unary ops shows how to handle the allocation inline:
-        // SymbolTableEntry &tmpEntry = symbolTable.at(dest);
-        // tmpEntry.setDataType(INTEGER); // or BOOLEAN for logical ops
-        // tmpEntry.setMode(VARIABLE);
-        // tmpEntry.setAlloc(YES);
-        // if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(dest);
+        if (isTemporary(rightOpName)) freeTemp();
+            
+        // 2. Free the left operand temporary (if used) as it is consumed.
+        if (isTemporary(leftOpName)) freeTemp();
+            
+        // 3. Update A register tracking and push the result.
+        //    The result of emit*Code is already in EAX.
+        //    Use the special name "EAX" to denote the result is in the register.
+        contentsOfAReg = "EAX";
         
-        // Assuming getTemp/insert sets up the entry, the following line should be safe:
-        emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
-
-        // 4. Free the left operand temporary (if used) as it is consumed.
-        if (isTemporary(left)) freeTemp();
-
-        // 5. Update A register tracking and push the result.
-        contentsOfAReg = dest;
-        pushOperand(dest);
+        // 4. PUSH the special name "EAX" back onto the operand stack.
+        //    This tells the next binary operation that its left operand is already loaded.
+        pushOperand("EAX");
     }
 }
 
@@ -1273,9 +1254,12 @@ void Compiler::emitAssignCode(string operand1, string operand2){        // op2 =
 // =========================================================================
 
 void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
-    // Ensure operands exist (insert literals if needed)
-    operand1 = CHECK_OPERAND_LOGIC(operand1);
-    operand2 = CHECK_OPERAND_LOGIC(operand2);
+// Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
+    // if the operand is the special "EAX" tracking name used for chaining.
+
+    if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
+    if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
+
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1301,10 +1285,13 @@ void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
     const auto &op2Entry = symbolTable.at(operand2); // left
 
     // B. Load left operand into EAX if not already there
-    if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
-        if (isTemporary(operand2)) contentsOfAReg = operand2;
-        else contentsOfAReg.clear();
+    if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
+        // FIX: Change 'leftEntry' to 'op2Entry' (already declared above)
+        if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
+            emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
+        else
+            emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+        // DO NOT change contentsOfAReg here.
     }
 
     // C. Perform addition (immediate if literal without internalName)
@@ -1314,32 +1301,16 @@ void Compiler::emitAdditionCode(string operand1, string operand2){ // op2 + op1
         emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; eax += " + operand1);
     }
 
-    // D. Final tracking: result will be a temp below; clear only if left wasn't a temp
-    if (!isTemporary(operand2)) contentsOfAReg.clear();
-
-    // E. Do not free operand1 here; freeing should be LIFO or explicit by name elsewhere
-
-    // F. Create and store result temp (allocate inline, only once)
-    string tmp = getTemp();                     // alloc==NO initially
-
-    // inline allocate storage for tmp (only now)
-    SymbolTableEntry &tmpEntry = symbolTable.at(tmp);
-    tmpEntry.setDataType(INTEGER);
-    tmpEntry.setMode(VARIABLE);
-    tmpEntry.setAlloc(YES);
-    if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(tmp);
-
-    emit("", "mov", "[" + tmpEntry.getInternalName() + "], eax", "; store result into " + tmp);
-
-    // Push result temp for parser and update tracking
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
+    contentsOfAReg = "EAX"; // Signal that the result of the operation is in EAX
 }
 
 void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - op1
-    // Ensure operands exist
-    operand1 = CHECK_OPERAND_LOGIC(operand1);
-    operand2 = CHECK_OPERAND_LOGIC(operand2);
+    // Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
+    // if the operand is the special "EAX" tracking name used for chaining.
+
+    if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
+    if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
+
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1364,10 +1335,13 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - o
     const auto &op2Entry = symbolTable.at(operand2); // left
 
     // B. Load left operand into EAX if not already there
-    if (contentsOfAReg != operand2) {
-        emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
-        if (isTemporary(operand2)) contentsOfAReg = operand2;
-        else contentsOfAReg.clear();
+    if (contentsOfAReg != operand2 && contentsOfAReg != "EAX") {
+        // FIX: Change 'leftEntry' to 'op2Entry' (already declared above)
+        if (op2Entry.getMode() == CONSTANT && op2Entry.getInternalName().empty()) 
+            emit("", "mov", "eax, " + op2Entry.getValue(), "; load immediate " + op2Entry.getValue());
+        else
+            emit("", "mov", "eax, [" + op2Entry.getInternalName() + "]", "; load " + operand2 + " into eax");
+        // DO NOT change contentsOfAReg here.
     }
 
     // C. Perform subtraction
@@ -1377,30 +1351,16 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){ // op2 - o
         emit("", "sub", "eax, [" + op1Entry.getInternalName() + "]", "; eax -= " + operand1);
     }
 
-    // D. Final tracking: clear if left wasn't a temp
-    if (!isTemporary(operand2)) contentsOfAReg.clear();
-
-    // E. Do not free operand1 here
-
-    // F. Create and store result temp (allocate inline)
-    string tmp = getTemp();
-
-    SymbolTableEntry &tmpEntry = symbolTable.at(tmp);
-    tmpEntry.setDataType(INTEGER);
-    tmpEntry.setMode(VARIABLE);
-    tmpEntry.setAlloc(YES);
-    if (tmpEntry.getInternalName().empty()) tmpEntry.setInternalName(tmp);
-
-    emit("", "mov", "[" + tmpEntry.getInternalName() + "], eax", "; store result into " + tmp);
-
-    pushOperand(tmp);
-    contentsOfAReg = tmp;
+    contentsOfAReg = "EAX"; // Signal that the result of the operation is in EAX
 }
 
 void Compiler::emitMultiplicationCode(string operand1, string operand2) { // op2 * op1
-    // Ensure operands exist (insert literals if needed)
-    operand1 = CHECK_OPERAND_LOGIC(operand1);
-    operand2 = CHECK_OPERAND_LOGIC(operand2);
+// Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
+    // if the operand is the special "EAX" tracking name used for chaining.
+
+    if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
+    if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
+
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1457,8 +1417,12 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2) { // op2
 }
 
 void Compiler::emitDivisionCode(string operand1, string operand2){ // op2 / op1
-    operand1 = CHECK_OPERAND_LOGIC(operand1); // divisor (right)
-    operand2 = CHECK_OPERAND_LOGIC(operand2); // dividend (left)
+    // Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
+    // if the operand is the special "EAX" tracking name used for chaining.
+
+    if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
+    if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
+
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
@@ -1512,9 +1476,12 @@ void Compiler::emitDivisionCode(string operand1, string operand2){ // op2 / op1
 }
 
 void Compiler::emitModuloCode(string operand1, string operand2){ // op2 % op1
-    // Ensure operands exist
-    operand1 = CHECK_OPERAND_LOGIC(operand1);
-    operand2 = CHECK_OPERAND_LOGIC(operand2);
+    // Ensure operands exist (insert literals if needed), but skip CHECK_OPERAND_LOGIC 
+    // if the operand is the special "EAX" tracking name used for chaining.
+
+    if (operand1 != "EAX") operand1 = CHECK_OPERAND_LOGIC(operand1);
+    if (operand2 != "EAX") operand2 = CHECK_OPERAND_LOGIC(operand2);
+
     if (operand1.empty() || operand2.empty()) return;
 
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
