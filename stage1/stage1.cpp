@@ -147,12 +147,18 @@ Compiler::~Compiler(){  // destructor
     if (objectFile.is_open()) objectFile.close();
 }
 
+// Define a consistent width for the header prefix (adjust 50 as needed
+// to match your reference output's visual alignment)
+const int LISTING_HEADER_WIDTH = 50; 
+
 void Compiler::createListingHeader(){
     std::string timeStr = getTime();
+    std::string headerPrefix = "STAGE1: SERENA REESE, AMIRAN FIELDS";
 
-    // Listing header output to listingFile, not console
-    listingFile << "STAGE1:\tSERENA REESE, AMIRAN FIELDS\t\t" << timeStr << "\n\n";
+    // 1. Output the header line: Left-align headerPrefix, pad to LISTING_HEADER_WIDTH, then print timeStr.
+    listingFile << std::left << std::setw(LISTING_HEADER_WIDTH) << headerPrefix << timeStr << "\n\n";
 
+    // 2. Line number header (Your existing, correct logic)
     listingFile << std::left << "LINE NO."
                 << std::setw(23 - std::string("LINE NO.").length()) << " "
                 << "SOURCE STATEMENT\n";
@@ -176,15 +182,23 @@ void Compiler::parser(){
 
 void Compiler::createListingTrailer() {
     std::string errorWord = (errorCount == 1) ? "ERROR" : "ERRORS";
+    std::string terminatedStr = "COMPILATION TERMINATED";
 
-    // Output to console
+    // The entire "COMPILATION TERMINATED" string must be padded to LISTING_HEADER_WIDTH.
+    
+    // Output to console (using the original logic, assuming console is separate)
     std::cout << "COMPILATION TERMINATED\t\t"
               << errorCount << " " << errorWord << " ENCOUNTERED"
               << std::endl;
 
-    // Output to listing file
+    // Output to listing file (THE FIX)
     if (listingFile.is_open()) {
-        listingFile << "\n" << "COMPILATION TERMINATED\t\t"
+        listingFile << "\n";
+        
+        // Use std::left alignment and pad the 'COMPILATION TERMINATED' string 
+        // to LISTING_HEADER_WIDTH. The text that follows (the error count '0') 
+        // will begin exactly at the column where the padding ends.
+        listingFile << std::left << std::setw(LISTING_HEADER_WIDTH) << terminatedStr 
                     << errorCount << " " << errorWord << " ENCOUNTERED"
                     << std::endl;
     }
