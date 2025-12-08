@@ -149,7 +149,8 @@ Compiler::~Compiler(){  // destructor
 
 // Define a consistent width for the header prefix (adjust 50 as needed
 // to match your reference output's visual alignment)
-const int LISTING_HEADER_WIDTH = 50; 
+const int LISTING_HEADER_WIDTH = 50;
+const int LISTING_ALIGN_WIDTH = 50;
 
 void Compiler::createListingHeader(){
     std::string timeStr = getTime();
@@ -186,19 +187,15 @@ void Compiler::createListingTrailer() {
 
     // The entire "COMPILATION TERMINATED" string must be padded to LISTING_HEADER_WIDTH.
     
-    // Output to console (using the original logic, assuming console is separate)
-    std::cout << "COMPILATION TERMINATED\t\t"
+    // Output to console (using the original logic)
+    std::cout << std::left << std::setw(LISTING_ALIGN_WIDTH) << terminatedStr 
               << errorCount << " " << errorWord << " ENCOUNTERED"
               << std::endl;
 
     // Output to listing file (THE FIX)
     if (listingFile.is_open()) {
         listingFile << "\n";
-        
-        // Use std::left alignment and pad the 'COMPILATION TERMINATED' string 
-        // to LISTING_HEADER_WIDTH. The text that follows (the error count '0') 
-        // will begin exactly at the column where the padding ends.
-        listingFile << std::left << std::setw(LISTING_HEADER_WIDTH) << terminatedStr 
+        listingFile << std::left << std::setw(LISTING_ALIGN_WIDTH) << terminatedStr 
                     << errorCount << " " << errorWord << " ENCOUNTERED"
                     << std::endl;
     }
