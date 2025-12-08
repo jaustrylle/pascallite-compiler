@@ -1395,19 +1395,19 @@ void Compiler::emitAssignCode(string operand1, string operand2){     // op2 = op
 
     // C. Perform Assignment: EAX -> Destination Memory
     emit("", "mov", "[" + destEntry.getInternalName() + "], eax", 
-         "; " + operand2 + " = AReg (result of " + operand1 + ")");
-    
+         "; " + operand2 + " = AReg"); // **FIXED COMMENT** to match target template
+
     // D. Final State Cleanup and Type Update
-    // Deallocate Temporary storage if source was a temporary (i.e., the result of an expression)
+    // Deallocate Temporary storage if source was a temporary (value moved to lhs)
     if (isTemporary(operand1)) {
-        freeTemp(); 
+        symbolTable.at(operand1).setAlloc(NO); // Manually deallocate the specific temp
+        // freeTemp(); // Use your internal freeTemp if it correctly handles counters
     }
 
-    // EAX no longer uniquely represents the calculated value, only the final assignment value.
-    // It's safer to clear AReg tracking.
-    contentsOfAReg.clear();
-    // Type update logic remains separate and fine.
-    // destEntry.setDataType(whichType(rhs));
+    // EAX now holds the value of the destination variable (operand2).
+    // The previous name (operand1) is gone, replaced by the destination name (operand2).
+    // This is the CRITICAL change for EAX chaining:
+    contentsOfAReg = operand2; // <-- CRITICAL: EAX now tracks the LHS variable ("a")
 }
 
 // =========================================================================
@@ -1421,9 +1421,9 @@ void Compiler::emitAdditionCode(string operand1, string operand2){
 
     // 1. Perform Operation (This is the only code generation needed)
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
-        emit("", "add", "eax, " + op1Entry.getInternalName(), "; AReg = " + operand2 + " + " + op1Entry.getValue());
+        emit("", "add", "eax, " + op1Entry.getInternalName(), "; AReg = " + operand2 + " + " + operand1);
     } else {
-        emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " + " + op1Entry.getValue());
+        emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " + " + operand1);
     }
 
     // 3. Free the RHS temporary
