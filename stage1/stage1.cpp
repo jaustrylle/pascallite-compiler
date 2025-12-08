@@ -747,35 +747,26 @@ void Compiler::factor(){         // stage 1, prod 13
             return;
         }
 
-        // --- Special Case: Unary Plus is a no-op ---
         if (unary == "+") {
-            // The result is just the operand itself. No code generation needed.
-            // Push the operand back onto the stack to be the result of the factor.
+            // Match: Unary Plus is a no-op.
             pushOperand(opnd);
-
         } else {
             // --- Unary Minus and NOT (Code Generating) ---
 
-            // Apply unary op: Emitter calculates the operation, leaves result in EAX, and clears contentsOfAReg.
+            // Apply unary op: Emitter calculates the operation, leaves result in EAX.
             if (unary == "-") {
-                emitNegationCode(opnd);
+                emitNegationCode(opnd); // Emitter should ensure opnd is in EAX, then negates.
             } else if (unary == "not") {
                 emitNotCode(opnd);
-            } else {
-                processError("unknown unary operator: " + unary);
-                return;
             }
-
-            // EAX now holds the result. We need to save it to a new temporary.
-            std::string dest = getTemp();
-            emit("", "mov", "[" + symbolTable.at(dest).getInternalName() + "], eax", "; store expression result into " + dest);
-
-            // Free the temporary used for the operand (which has now been consumed)
-            if (isTemporary(opnd)) freeTemp();
-
-            // Update A register tracking and push the result
-            contentsOfAReg = dest;
-            pushOperand(dest);
+            
+            // If the operand was a temporary, its value has been consumed and its name
+            // can now track the new result (since its old value is no longer needed).
+            // This relies on the subsequent logic (factors, terms) to handle freeing.
+            
+            // For now, just track the operand's name as the new content of AReg.
+            contentsOfAReg = opnd;
+            pushOperand(opnd); // The operand's name now represents the negated/NOT'd value in EAX
         }
 
     } else {
@@ -1593,6 +1584,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 // ------------------------------------------------------
 
 void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -op1, UNARY
+    // type checks, error handling
     if (!symbolTable.count(operand1)) {
         processError("reference to undefined symbol in negation: " + operand1);
         return;
@@ -1602,29 +1594,54 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
         return;
     }
 
-    // spill unrelated
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
-        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+    // --- Spill Logic (Save EAX if it holds a temporary result) ---
+    // The spill logic ensures that if EAX currently holds the result of a previous
+    // calculation (tracked by contentsOfAReg) and we are about to clobber EAX,
+    // that result is first saved to memory.
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand1) {
+        auto &entry = symbolTable.at(contentsOfAReg);
         if (entry.getAlloc() == NO) {
-            // allocate manually here since allocateTempStorage() is unavailable
+            // Allocate storage manually if the temporary hasn't been saved yet
             entry.setAlloc(YES);
             if (entry.getInternalName().empty()) {
-                entry.setInternalName(contentsOfAReg);
+                // If the temp has no internal name (I_T0, etc.), generate one now
+                entry.setInternalName(genInternalName(entry.getDataType()));
             }
         }
         emit("", "mov", "[" + entry.getInternalName() + "], eax",
              "; spill A reg (" + contentsOfAReg + ")");
-        contentsOfAReg.clear();
+        contentsOfAReg.clear(); // EAX is now clear
     }
 
-    // B. Perform negation
-    emit("", "neg", "eax", "; negate eax");
+    // --- 1. Ensure EAX has the value of the operand ---
+    // Fix: The variable name was 'operand' but should be 'operand1'.
+    if (contentsOfAReg != operand1) {
+        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", 
+             "; Load " + operand1 + " into EAX for negation");
+        contentsOfAReg = operand1; // EAX is now tracked by the operand's name
+    }
 
-    // C. Temporary Cleanup (If the source operand was a temporary, free it)
-    if (isTemporary(operand1)) freeTemp();
+    // --- 2. Perform the operation ---
+    emit("", "neg", "eax", "; AReg = -AReg");
+    
+    // --- 3. Free the temporary storage for the consumed operand ---
+    // The value of 'operand1' is consumed and its *name* will be reused to track the new result.
+    if (isTemporary(operand1)) {
+        // Set the storage name alloc to NO so its storage location is available.
+        symbolTable.at(operand1).setAlloc(NO);
+    }
+    
+    // --- 4. Update AReg Tracking ---
+    // EAX now holds the result of the negation. The name 'operand1' is what is
+    // pushed back onto the operand stack (in factor()), so 'operand1' will now 
+    // symbolically represent the new value in EAX.
+    // We clear it here because the value changed, even though the name (operand1) is reused.
+    contentsOfAReg.clear(); 
 }
 
-void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !op1, UNARY
+void Compiler::emitNotCode(string operand1, string /*operand2*/) { // !op1, UNARY
+
+    // --- Error Handling and Type Checks ---
     if (!symbolTable.count(operand1)) {
         processError("reference to undefined symbol in not: " + operand1);
         return;
@@ -1634,26 +1651,75 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/){           // !
         return;
     }
 
-    // spill unrelated
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
-        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+    // --- 1. Spill EAX if it holds a valuable, unsaved temporary ---
+    // If EAX holds the result of a previous calculation (contentsOfAReg is a temporary
+    // and its value is NOT the one we are about to load in step 2), save it.
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand1) {
+        auto &entry = symbolTable.at(contentsOfAReg);
         if (entry.getAlloc() == NO) {
-            // allocate manually here since allocateTempStorage() is unavailable
+            // Allocate storage manually (as per instruction for stage 1)
             entry.setAlloc(YES);
+            // Ensure internal name is set if it's a temp (like T0 -> I_T0)
             if (entry.getInternalName().empty()) {
-                entry.setInternalName(contentsOfAReg);
+                entry.setInternalName(genInternalName(entry.getDataType())); // Use genInternalName
             }
         }
         emit("", "mov", "[" + entry.getInternalName() + "], eax",
              "; spill A reg (" + contentsOfAReg + ")");
-        contentsOfAReg.clear();
+        contentsOfAReg.clear(); // EAX is now empty/stale
+    }
+    // Note: If contentsOfAReg == operand1, we can skip the load below!
+    
+
+    // --- 2. Load Operand1 into EAX (if not already there) ---
+    // This is the operand we are about to NOT.
+    if (contentsOfAReg != operand1) {
+        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", 
+             "; Load " + operand1 + " into EAX for NOT");
+        contentsOfAReg = operand1; // EAX now holds operand1's value
     }
 
-    // B. Perform NOT
-    emit("", "not", "eax", "; bitwise not eax");
+    // --- 3. Perform the NOT Operation ---
+    // Note: Pascallite uses 0 for False and 1 for True. 'not eax' is a bitwise NOT,
+    // which inverts all bits (e.g., 0 becomes all ones). A logical NOT is needed.
+    // The typical logical NOT sequence (A_reg = !A_reg):
+    
+    // a) Compare EAX to 0 (False)
+    emit("", "cmp", "eax, 0", "; check if AReg is False (0)");
+    
+    // b) If not False (i.e., True, 1), clear EAX (set result to False, 0)
+    //    If False (0), the carry flag will be set.
+    
+    // Create a label for the jump
+    string L1 = getLabel();
+    emit("", "je", L1, "; if False, jump to L1 (result is True)"); 
+    
+    // EAX was True (1), so result is False (0)
+    emit("", "mov", "eax, 0", "; result is False"); 
+    string L2 = getLabel();
+    emit("", "jmp", L2, "; jump over True result"); 
+    
+    // L1: EAX was False (0), so result is True (1)
+    emit(L1, "mov", "eax, 1", "; result is True"); 
+    
+    // L2: Continue
+    emit(L2, "", "", ""); 
 
-    // C. Temporary Cleanup (If the source operand was a temporary, free it)
-    if (isTemporary(operand1)) freeTemp();
+    
+    // --- 4. Free the temporary storage for the consumed operand ---
+    if (isTemporary(operand1)) {
+        // Since freeTemp() is argument-less, we MUST set alloc=NO directly
+        // on the operand that was consumed (operand1) to make the name available for reuse.
+        symbolTable.at(operand1).setAlloc(NO); 
+        // We *could* call freeTemp() here if it decrements the temporary counter, 
+        // but it's safer to only modify the specific temporary entry.
+    }
+    
+    // --- 5. Update AReg Tracking ---
+    // EAX now holds the result of the NOT, which is no longer tracked by 'operand1'.
+    // The name 'operand1' is now available to track the *new* result in EAX 
+    // when it is pushed back onto the operand stack in factor().
+    contentsOfAReg.clear();
 }
 
 void Compiler::emitAndCode(string operand1, string operand2){            // op2 && op1
