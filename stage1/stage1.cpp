@@ -7,6 +7,7 @@ stage1.cpp
 - Uses registers A (eax) and D (edx)
 - D serves for mod division remainders
 - Each register assigned at most one operand at a time
+- parser needs to call freeTemp like this -> if (isTemporary(right)) freeTemp(right);, pass name
 */
 
 #include <stage1.h> // iostream, fstream, string, map, namespace, SymbolTable
@@ -723,15 +724,6 @@ void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
         // 3. RESULT MANAGEMENT (Temporary Generation for New Result)
         // ---------------------------------------------------------------
         std::string resultName = left;
-        if (!isTemporary(left)) {
-            // Create and save to new temporary
-            resultName = getTemp();
-            emit("", "mov", "[" + symbolTable.at(resultName).getInternalName() + "], eax", "; Save result to new temp " + resultName);
-            contentsOfAReg = resultName;
-        } else {
-            // Reuse old temporary name
-            contentsOfAReg = left;
-        }
         
         // 4. CLEANUP AND CONTINUE
         // If LHS was an old temporary, and we replaced it with a new name, free the old temp.
@@ -813,16 +805,6 @@ void Compiler::factors() {
         }
         
         // ---------------------------------------------------------------
-        // 1. ENSURE LHS IS IN EAX (Pre-Load for EAX Chaining)
-        // ---------------------------------------------------------------
-        // The LHS MUST be in EAX for the emitter to work. 
-        if (contentsOfAReg != left) {
-            // Load the value of the LHS operand from memory into EAX
-            emit("", "mov", "eax, [" + symbolTable.at(left).getInternalName() + "]", "; Load LHS (" + left + ") into EAX");
-            contentsOfAReg = left; // EAX now holds the value of 'left'
-        }
-        
-        // ---------------------------------------------------------------
         // 2. DISPATCH TO EMITTER (EAX = LHS op RHS)
         // ---------------------------------------------------------------
         if (op == "*") {
@@ -841,24 +823,6 @@ void Compiler::factors() {
         // 3. RESULT MANAGEMENT (Temporary Generation for New Result)
         // ---------------------------------------------------------------
         std::string resultName = left;
-        
-        // If the original LHS was NOT a temporary (i.e., it was a constant or variable), 
-        // we must save the new result from EAX to a NEW temporary location.
-        if (!isTemporary(left)) {
-            // Get a NEW symbol name (e.g., "T1")
-            resultName = getTemp(); 
-            
-            // Save the calculated EAX result into the new temporary's memory
-            emit("", "mov", "[" + symbolTable.at(resultName).getInternalName() + "], eax", "; Save result to new temp " + resultName);
-            
-            // Update AReg tracking
-            contentsOfAReg = resultName;
-        } else {
-            // If it was already a temporary ("T0"), its name is still valid for tracking the result in EAX
-            // We just update the tracker to reflect the successful operation.
-            contentsOfAReg = left;
-            // The name 'left' is reused, but the old temporary memory is now overwritten.
-        }
         
         // 4. CLEANUP AND CONTINUE
         // We only free the RHS temporary here if it hasn't been freed by the emitter (less common).
@@ -2268,24 +2232,46 @@ void Compiler::processError(string err){
 
 //////////////////// EXPANDED DURING STAGE 1
 
-// Free the last temporary (or the one currently in contentsOfAReg)
+// Must rely on contentsOfAReg to decide what to free, so only
+// use in a context where name in contentsOfAReg is temp being consumed
+// usually only true for unary ops or when temp = finalResult
 void Compiler::freeTemp() {
-    if (contentsOfAReg.empty()) return;
-    auto it = symbolTable.find(contentsOfAReg);
-    if (it == symbolTable.end()) return;
-    it->second.setAlloc(NO);
-    contentsOfAReg.clear();
+    // This implementation assumes the last-used temporary is the one to be freed.    
+    if (maxTempNo >= 0) {
+        string tempName = "T" + std::to_string(maxTempNo);
+        
+        // Instead of decrementing the counter, we simply mark the storage for the highest
+        // temporary name as available, effectively enabling its reuse if the compiler
+        // generated a system to recycle from maxTempNo downwards (not guaranteed).
+        
+        // if *highest* temporary first:
+        if (symbolTable.count(tempName)) {
+            symbolTable.at(tempName).setAlloc(NO);
+        }
+        
+        --currentTempNo; // Only way to reuse the highest temp name
+    }
+    // Note: Do NOT use contentsOfAReg here, that is the name of the expression result
 }
 
 // 2) Create temp name (no allocation of storage)
 string Compiler::getTemp() {
+    // Current strategy: start at -1, so first call yields T0
+    // Use the counter value, then increment for the *next* call.
+    
+    // Increment first to get the next number (from -1 to 0, 0 to 1, etc.)
     ++currentTempNo;
     if (currentTempNo > maxTempNo) maxTempNo = currentTempNo;
+    
     string temp = "T" + std::to_string(currentTempNo);
-    // Insert placeholder if desired, but mark alloc == NO so it won't appear in .data/.bss
+    
+    // Insert placeholder if desired, but mark alloc == NO (as required)
     if (symbolTable.count(temp) == 0) {
+        // Assume your insert handles creating the internal name (e.g., I_T0)
+        // Set mode=VARIABLE since it's an intermediate result, not a constant.
         insert(temp, INTEGER, VARIABLE, "", NO, 1); // alloc == NO
     } else {
+        // Reset properties if the name was somehow reused/changed type
         symbolTable.at(temp).setDataType(INTEGER);
         symbolTable.at(temp).setMode(VARIABLE);
         symbolTable.at(temp).setAlloc(NO);
