@@ -1421,7 +1421,7 @@ void Compiler::emitAdditionCode(string operand1, string operand2){
 
     // 1. Perform Operation (This is the only code generation needed)
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
-        emit("", "add", "eax, " + op1Entry.getValue(), "; AReg = " + operand2 + " + " + op1Entry.getValue());
+        emit("", "add", "eax, " + op1Entry.getInternalName(), "; AReg = " + operand2 + " + " + op1Entry.getValue());
     } else {
         emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " + " + op1Entry.getValue());
     }
@@ -1458,7 +1458,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
 
     // C. Perform Operation
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
-        emit("", "sub", "eax, " + op1Entry.getValue(), "; eax -= " + op1Entry.getValue());
+        emit("", "sub", "eax, " + op1Entry.getInternalName(), "; eax -= " + op1Entry.getValue());
     } else {
         // Must reference memory for SUB
         emit("", "sub", "eax, [" + op1Entry.getInternalName() + "]", "; eax -= " + operand1); 
@@ -1494,7 +1494,7 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){       /
         // Use two-operand IMUL with the immediate value if possible.
         // NOTE: Standard IMUL syntax for immediate values often uses 'imul eax, eax, value' 
         //       but let's use the simplest, most compatible syntax for now.
-        emit("", "imul", "eax, " + op1Entry.getValue(), "; AReg = " + operand2 + " * " + op1Entry.getValue());
+        emit("", "imul", "eax, " + op1Entry.getInternalName(), "; AReg = " + operand2 + " * " + op1Entry.getValue());
     } else {
         // This is the standard path for variables, temporaries, and constants 
         // already assigned an internal memory location (like [I1]).
@@ -1746,7 +1746,7 @@ void Compiler::emitAndCode(string operand1, string operand2){            // op2 
     // C. AND with operand1
     const auto &op1Entry = symbolTable.at(operand1);
     if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
-        emit("", "and", "eax, " + op1Entry.getValue(), "; eax &= " + op1Entry.getValue());
+        emit("", "and", "eax, " + op1Entry.getInternalName(), "; eax &= " + op1Entry.getValue());
     } else {
         emit("", "and", "eax, [" + op1Entry.getInternalName() + "]",
              "; eax &= " + operand1);
@@ -1780,7 +1780,7 @@ void Compiler::emitOrCode(string operand1, string operand2){             // op2 
     // C. OR with operand1
     const auto &op1Entry = symbolTable.at(operand1);
     if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
-        emit("", "or", "eax, " + op1Entry.getValue(), "; eax |= " + op1Entry.getValue());
+        emit("", "or", "eax, " + op1Entry.getInternalName(), "; eax |= " + op1Entry.getValue());
     } else {
         emit("", "or", "eax, [" + op1Entry.getInternalName() + "]",
              "; eax |= " + operand1);
@@ -1823,7 +1823,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 
     // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
@@ -1872,7 +1872,7 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
     // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference for non-immediate values
         emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
@@ -1925,7 +1925,7 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
     // Compare eax with operand1
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference for non-immediate values
         emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
@@ -1977,7 +1977,7 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
     
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference
         emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
@@ -2029,7 +2029,7 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference
         emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
@@ -2082,7 +2082,7 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
 
     const auto &srcEntry = symbolTable.at(operand1);
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
-        emit("", "cmp", "eax, " + srcEntry.getValue(), "; compare with " + srcEntry.getValue());
+        emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference
         emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
