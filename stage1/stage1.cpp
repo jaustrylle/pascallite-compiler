@@ -706,19 +706,21 @@ void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
         token = nextToken();
         factor(); // Parse right-hand factor (additive level RHS)
         
-        std::string right = popOperand();
-        std::string left = popOperand();
-
+        std::string right = popOperand(); // RHS
+        std::string left = popOperand();  // LHS
+        
         // ---------------------------------------------------------------
-        // 1. ENSURE LHS IS IN EAX (Pre-Load for EAX Chaining)
-        // Note: term() should have done the initial load, but we re-check here.
+        // 1. CRITICAL FIX: REINSTATE CONDITIONAL LOAD
+        // This ensures the LHS (left) is in EAX before the operation,
+        // preventing temporary results (like the remainder in the 'z' assignment)
+        // from being incorrectly lost or overwritten.
         // ---------------------------------------------------------------
-        if (contentsOfAReg != left) {
-            // Load the value of the LHS operand from memory into EAX
+        if (contentsOfAReg != left) { 
+            // Load the LHS if it is not currently tracked in EAX (e.g., variable 'b').
             emit("", "mov", "eax,[" + symbolTable.at(left).getInternalName() + "]", "; AReg = " + left);
-            contentsOfAReg = left;
+            contentsOfAReg = left; // EAX now tracks the LHS name
         }
-            
+
         // ---------------------------------------------------------------
         // 2. DISPATCH TO EMITTER (EAX = LHS op RHS)
         // ---------------------------------------------------------------
@@ -729,11 +731,12 @@ void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
         } else if (op == "or") {
             emitOrCode(right, left);
         }
-        // Note: Emitter handles freeing 'right' temp.
+        // Note: Emitter should ensure the final result is in EAX and track it via 'left'.
         
         // ---------------------------------------------------------------
-        // 3. RESULT MANAGEMENT (Temporary Generation for New Result)
+        // 3. RESULT MANAGEMENT 
         // ---------------------------------------------------------------
+        // The result of the operation is tracked by the name of the LHS operand (left) in EAX.
         std::string resultName = left;
         
         // 4. CLEANUP AND CONTINUE
@@ -741,8 +744,13 @@ void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
         if (isTemporary(left) && resultName != left) {
             freeTemp();
         }
-            // Push the name tracking the new result back onto the stack
-            pushOperand(resultName);
+        
+        // CRITICAL: Ensure contentsOfAReg is updated after the operation if not done in emitter
+        // This ensures the result is correctly tracked for the next operation (chaining).
+        contentsOfAReg = resultName; 
+        
+        // Push the name tracking the new result back onto the stack
+        pushOperand(resultName);
     }
 }
 
@@ -809,9 +817,11 @@ void Compiler::factors() {
         // ---------------------------------------------------------------
         // 2. DISPATCH TO EMITTER (EAX = LHS op RHS)
         // ---------------------------------------------------------------
+        // The compiler trusts that EAX contains the result tracked by 'left'.
+        // The emitter performs the operation (EAX op right) and leaves the result in EAX.
         if (op == "*") {
-            // The emitter must load the RHS if it's not a constant and then perform imul
-            emitMultiplicationCode(left, right); 
+            // emitMultiplicationCode is responsible for saving the LHS (left) if needed
+            emitMultiplicationCode(right, left); 
         } else if (op == "div") {
             emitDivisionCode(right, left);  
         } else if (op == "mod") {
@@ -819,23 +829,17 @@ void Compiler::factors() {
         } else if (op == "and") {
             emitAndCode(right, left);
         }
-        // Note: The Emitter is responsible for freeing the 'right' temporary if needed.
         
         // ---------------------------------------------------------------
-        // 3. RESULT MANAGEMENT (Temporary Generation for New Result)
+        // 3. RESULT MANAGEMENT (Temporary Chaining)
         // ---------------------------------------------------------------
-        std::string resultName = right;
+        // The result is tracked by the LHS name (left) for chaining.
+        std::string resultName = left; // <-- FIX: Use LHS name for chaining
+        contentsOfAReg = resultName; // <-- CRITICAL FIX: Update AReg tracking
         
-        // 4. CLEANUP AND CONTINUE
-        // We only free the RHS temporary here if it hasn't been freed by the emitter (less common).
-        // Since emitMultiplicationCode should free the RHS, we only need to push the result.
-        
-        // If LHS was an old temporary, we free it here, as its name is replaced by resultName (if resultName != left)
-        if (isTemporary(left) && resultName != left) {
-             freeTemp(); // This might be required if getTemp uses a complex pool
-        }
-
-        // Push the name tracking the new result (e.g., "T1") back onto the stack
+        // 4. CONTINUE
+        // Temporary cleanup (freeing 'right') is done in the post-operation block 
+        // of Compiler::code(). We only push the new result name.
         pushOperand(resultName);
     }
 }
@@ -1026,105 +1030,66 @@ void Compiler::code(string op, string operand1, string operand2) {
     // -------- BINARY OPERATORS --------
     else if (op == "+") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitAdditionCode(operand1, operand2);
     }
 
     else if (op == "-") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitSubtractionCode(operand1, operand2);
     }
 
     else if (op == "*") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitMultiplicationCode(operand1, operand2);
     }
 
     else if (op == "div" || op == "/") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitDivisionCode(operand1, operand2);
     }
 
     else if (op == "mod" || op == "%") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitModuloCode(operand1, operand2);
     }
 
     else if (op == "and" || op == "&&") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitAndCode(operand1, operand2);
     }
 
     else if (op == "or" || op == "||") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitOrCode(operand1, operand2);
     }
 
     else if (op == "==") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitEqualityCode(operand1, operand2);
     }
 
     else if (op == "!=") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitInequalityCode(operand1, operand2);
     }
 
     else if (op == "<") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitLessThanCode(operand1, operand2);
     }
 
     else if (op == "<=") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitLessThanOrEqualToCode(operand1, operand2);
     }
 
     else if (op == ">") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitGreaterThanCode(operand1, operand2);
     }
 
     else if (op == ">=") {
         isBinOp = true;
-        if (contentsOfAReg != operand2)
-            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
-                 "; load " + operand2 + " into eax");
         emitGreaterThanOrEqualToCode(operand1, operand2);
     }
 
@@ -1145,7 +1110,6 @@ void Compiler::code(string op, string operand1, string operand2) {
     else {
         processError("compiler error: illegal arguments to code(): " + op);
     }
-
 
     // =====================================================================
     //           P O S T - O P E R A T I O N  C L E A N U P
@@ -1436,9 +1400,6 @@ void Compiler::emitAdditionCode(string operand1, string operand2){
     } else {
         emit("", "add", "eax,[" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " + " + operand1);
     }
-
-    // 3. Free the RHS temporary
-    if (isTemporary(operand1)) freeTemp();
     
     // The result is in EAX, tracked by operand2's name.
     // The calling function (e.g., terms) pushes operand2 back onto the stack.
@@ -1450,21 +1411,6 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
         return;
     }
 
-    // A. Spill management (same as addition, but ensure `contentsOfAReg.clear()` is called after spill)
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
-        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
-        if (entry.getAlloc() == NO) {
-            // allocate manually here since allocateTempStorage() is unavailable
-            entry.setAlloc(YES);
-            if (entry.getInternalName().empty()) {
-                entry.setInternalName(contentsOfAReg);
-            }
-        }
-        emit("", "mov", "[" + entry.getInternalName() + "],eax",
-             "; spill A reg (" + contentsOfAReg + ")");
-        contentsOfAReg.clear();
-    }
-
     const auto &op1Entry = symbolTable.at(operand1);
 
     // C. Perform Operation
@@ -1474,10 +1420,6 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
         // Must reference memory for SUB
         emit("", "sub", "eax,[" + op1Entry.getInternalName() + "]", "; eax -= " + operand1); 
     }
-    
-    // E. Temporary Cleanup
-    if (isTemporary(operand1)) freeTemp();
-    // Do NOT free operand2 here.
 }
 
 void Compiler::emitMultiplicationCode(string operand1, string operand2){       // op2 * op1, BINARY
@@ -1486,89 +1428,74 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){       /
         return;
     }
 
-    // A. Register Spill Management (REVISED)
-    // Check if EAX holds a temporary AND that temporary is NOT the left operand.
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand2) {
-        // ... (Spill logic remains the same, but it's now conditional) ...
-        
-        emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "],eax",
-             "; spill A reg (" + contentsOfAReg + ")");
-        contentsOfAReg.clear();
-    }
-    // If contentsOfAReg == operand2 (e.g., T0), we skip the spill.
-
-    const auto &op1Entry = symbolTable.at(operand1);
-    const auto &op2Entry = symbolTable.at(operand2);     // Still needed for the internal name in the alternate path
-
-    // get temp name
-    std::string lhsCommentName = operand2; 
-
-    // An intermediate result is:
-    // 1. Explicitly a T# name (if your addition code is perfect). OR
-    // 2. A constant integer literal name (like "3") used to track the value.
-    if (isTemporary(operand2) || 
-        (symbolTable.count(operand2) && symbolTable.at(operand2).getMode() == CONSTANT && isInteger(operand2))) 
-    {
-        // Construct the name of the LAST generated temporary result (the one in EAX).
-        // Since getTemp() increments the counter *before* returning the name, 
-        // currentTempNo holds the index of the most recently generated temporary (T0, T1, etc.).
-        if (currentTempNo < 0) {
-            lhsCommentName = "T0";
-        } else {
-            lhsCommentName = "T" + std::to_string(currentTempNo);
-        }
-    }
-        
-    // C. Perform Operation - REVISED LOGIC
-    // Check if the right operand is a constant literal value (e.g., "5") *not* yet assigned an internal name (rare in your setup)
-    if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty()) {
-        // Use two-operand IMUL with the immediate value if possible.
-        // NOTE: Standard IMUL syntax for immediate values often uses 'imul eax, eax, value' 
-        //       but let's use the simplest, most compatible syntax for now.
-        emit("", "imul", "eax, " + op1Entry.getInternalName(), "; AReg = " + op2Entry.getInternalName() + " * " + op1Entry.getValue());
-    } else {
-        // This is the standard path for variables, temporaries, and constants 
-        // already assigned an internal memory location (like [I1]).
-        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; AReg = " + lhsCommentName + " * " + operand1);
+    // CRITICAL SPILL: Ensure EAX (which holds LHS) is saved
+    if (isTemporary(operand2) && contentsOfAReg == operand2) {
+        std::string tempInternalName = symbolTable.at(operand2).getInternalName();
+        emit("", "mov", "[" + tempInternalName + "],eax", "; Spill LHS (op2) to memory");
+        // CRITICAL: Clear AReg tracking *after* spilling
+        contentsOfAReg.clear(); 
     }
     
-    // E. Temporary Cleanup
-    if (isTemporary(operand1)) freeTemp();
+    // --- CRITICAL FIX: SPILL LHS TEMPORARY (op2) BEFORE EAX IS REUSED --- <-- DELETE THIS COMMENT
+    
+    const auto &op2Entry = symbolTable.at(operand2); // Entry for LHS
+    
+    // Use the LHS memory location (op2Entry) for IMUL
+    // EAX (RHS) = EAX (RHS) * [LHS]
+    emit("", "imul", "dword [" + op2Entry.getInternalName() + "]", "; AReg = AReg * " + operand2);
+
+    // CRITICAL: Update AReg tracking since the result is in EAX.
+    // The result replaces the LHS temporary, which is now the tracked item.
+    contentsOfAReg = operand2;
 }
 
-void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 / op1
-    // (op1Entry is the divisor, op2Entry is the dividend)
-    const auto &op1Entry = symbolTable.at(operand1);
+void Compiler::emitDivisionCode(string operand1, string operand2){ // op2 / op1
+    // op2 is the Dividend (LHS), op1 is the Divisor (RHS)
+    const auto &op1Entry = symbolTable.at(operand1); // Divisor (RHS)
     
     if (whichType(operand1) != INTEGER || whichType(operand2) != INTEGER) {
         processError("illegal type in division (integers required)");
         return;
     }
 
-    // A. Spill unrelated A reg content (Keep as is)
-    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg)) {
-        auto &entry = symbolTable.at(contentsOfAReg);  // okay inside Compiler member
+    // A. Conditional Spill of unrelated A reg content
+    // We only spill if EAX holds a temporary *other than* the dividend (operand2).
+    if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand2) {
+        // CRITICAL FIX: The 'entry' declaration must be inside this 'if' block.
+        // The previous error was a scope issue.
+        auto &entry = symbolTable.at(contentsOfAReg); 
+
+        // Allocate temporary storage if needed (assuming helper function is available)
+        // If your compiler has allocateTempStorage(), use it here.
         if (entry.getAlloc() == NO) {
-            // allocate manually here since allocateTempStorage() is unavailable
             entry.setAlloc(YES);
             if (entry.getInternalName().empty()) {
                 entry.setInternalName(contentsOfAReg);
             }
         }
+        
         emit("", "mov", "[" + entry.getInternalName() + "],eax",
-             "; spill A reg (" + contentsOfAReg + ")");
+             "; spill unrelated A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
+    
+    // B. Ensure EAX holds the dividend (operand2)
+    // If operand2 is not already in EAX (e.g., if it was spilled or needs loading).
+    if (contentsOfAReg != operand2) {
+        emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]", "; Load dividend (" + operand2 + ") into EAX");
+        contentsOfAReg = operand2;
+    }
 
-    // C. Sign-extend eax into edx:eax
+    // C. Sign-extend eax into edx:eax (required for IDIV)
     emit("", "cdq", "", "; sign-extend eax into edx:eax for division");
-    contentsOfAReg.clear(); // EAX/EDX contents are now computed, clear tracking
 
     // D. Perform IDIV (Quotient in EAX, Remainder in EDX)
-    // FIX: Use op1Entry instead of the undefined divisorEntry
     emit("", "idiv", "dword [" + op1Entry.getInternalName() + "]", "; idiv by " + operand1);
-
-    if (isTemporary(operand1)) freeTemp();
+    
+    // E. Result Tracking
+    // The quotient is the result, stored in EAX. The result name is the dividend's name (operand2).
+    // We clear the tracker for EDX (remainder is lost unless MOD is used).
+    contentsOfAReg = operand2; 
 }
 
 void Compiler::emitModuloCode(string operand1, string operand2){        // op2 % op1
@@ -1605,9 +1532,6 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
 
     // E. Move remainder (EDX) into EAX (the accumulator for the result)
     emit("", "mov", "eax, edx", "; move remainder (edx) to accumulator (eax)");
-    
-    // G. Temporary Cleanup
-    if (isTemporary(operand1)) freeTemp();
 }
 
 // ------------------------------------------------------
@@ -1645,29 +1569,24 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
     }
 
     // --- 1. Ensure EAX has the value of the operand ---
-    // Fix: The variable name was 'operand' but should be 'operand1'.
     if (contentsOfAReg != operand1) {
         emit("", "mov", "eax,[" + symbolTable.at(operand1).getInternalName() + "]", 
-             "; Load " + operand1 + " into EAX for negation");
-        contentsOfAReg = operand1; // EAX is now tracked by the operand's name
+              "; Load " + operand1 + " into EAX for negation");
+        // Do NOT set contentsOfAReg here, as 'operand1' might still be needed in memory 
+        // if this code block gets interrupted before the final result is tracked.
     }
 
     // --- 2. Perform the operation ---
     emit("", "neg", "eax", "; AReg = -AReg");
     
-    // --- 3. Free the temporary storage for the consumed operand ---
-    // The value of 'operand1' is consumed and its *name* will be reused to track the new result.
-    if (isTemporary(operand1)) {
-        // Set the storage name alloc to NO so its storage location is available.
-        symbolTable.at(operand1).setAlloc(NO);
-    }
+    // --- 3. Update AReg Tracking (THE KEY FIX) ---
+    // EAX now holds the new value (-operand1). The name 'operand1' is used 
+    // to track this new result (as it's pushed back onto the stack in factor()).
+    contentsOfAReg = operand1; 
     
-    // --- 4. Update AReg Tracking ---
-    // EAX now holds the result of the negation. The name 'operand1' is what is
-    // pushed back onto the operand stack (in factor()), so 'operand1' will now 
-    // symbolically represent the new value in EAX.
-    // We clear it here because the value changed, even though the name (operand1) is reused.
-    contentsOfAReg.clear(); 
+    // --- 4. Temporary Cleanup ---
+    // Do NOT call freeTemp() or setAlloc(NO) here. The name 'operand1' 
+    // needs to survive to track the new negated value in EAX.
 }
 
 void Compiler::emitNotCode(string operand1, string /*operand2*/) { // !op1, UNARY
@@ -1782,9 +1701,6 @@ void Compiler::emitAndCode(string operand1, string operand2){            // op2 
         emit("", "and", "eax,[" + op1Entry.getInternalName() + "]",
              "; eax &= " + operand1);
     }
-
-    // D. Temporary Cleanup
-    if (isTemporary(operand1)) freeTemp();
 }
 
 void Compiler::emitOrCode(string operand1, string operand2){             // op2 || op1
@@ -1816,9 +1732,6 @@ void Compiler::emitOrCode(string operand1, string operand2){             // op2 
         emit("", "or", "eax,[" + op1Entry.getInternalName() + "]",
              "; eax |= " + operand1);
     }
-
-    // D. Temporary Cleanup
-    if (isTemporary(operand1)) freeTemp();
 }
 
 // ------------------------------------------------------
@@ -1868,12 +1781,6 @@ void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 
     emit(Ltrue + ":");
     emit("", "mov", "eax, -1", "; load TRUE (-1)");
     emit(Lend + ":");
-
-    // EAX now holds the boolean result. contentsOfAReg MUST remain clear 
-    // until the calling expression routine assigns a new temporary name.
-    // Deassign/free temporaries (Correct for comparison)
-    if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 != op1
@@ -1926,10 +1833,6 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
     emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
-
-    // Deassign/free temporaries
-    if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 < op1
@@ -1979,10 +1882,6 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
     emit("", "mov", "eax, -1", "; load TRUE");
 
     emit(Lend + ":");
-
-    // Deassign/free temporaries
-    if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     // op2 <= op1
@@ -2031,10 +1930,6 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
     emit("", "mov", "eax, -1", "; load TRUE (-1)");
 
     emit(Lend + ":");
-
-    // Deassign/free temporaries
-    if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitGreaterThanCode(string operand1, string operand2){           // op2 > op1
@@ -2084,10 +1979,6 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
     emit("", "mov", "eax, -1", "; load TRUE (-1)");
 
     emit(Lend + ":");
-
-    // Deassign/free temporaries
-    if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  // op2 >= op1
@@ -2136,10 +2027,6 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
     emit("", "mov", "eax, -1", "; load TRUE (-1)");
 
     emit(Lend + ":");
-
-    // Deassign/free temporaries
-    if (isTemporary(operand1)) freeTemp();
-    if (isTemporary(operand2)) freeTemp();
 }
 
 /* ------------------------------------------------------
