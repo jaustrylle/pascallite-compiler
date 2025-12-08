@@ -1487,8 +1487,27 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){       /
     // If contentsOfAReg == operand2 (e.g., T0), we skip the spill.
 
     const auto &op1Entry = symbolTable.at(operand1);
-    const auto &op2Entry = symbolTable.at(operand2);
+    const auto &op2Entry = symbolTable.at(operand2);     // Still needed for the internal name in the alternate path
 
+    // get temp name
+    std::string lhsCommentName = operand2; 
+
+    // An intermediate result is:
+    // 1. Explicitly a T# name (if your addition code is perfect). OR
+    // 2. A constant integer literal name (like "3") used to track the value.
+    if (isTemporary(operand2) || 
+        (symbolTable.count(operand2) && symbolTable.at(operand2).getMode() == CONSTANT && isInteger(operand2))) 
+    {
+        // Construct the name of the LAST generated temporary result (the one in EAX).
+        // Since getTemp() increments the counter *before* returning the name, 
+        // currentTempNo holds the index of the most recently generated temporary (T0, T1, etc.).
+        if (currentTempNo < 0) {
+            lhsCommentName = "T0";
+        } else {
+            lhsCommentName = "T" + std::to_string(currentTempNo);
+        }
+    }
+        
     // C. Perform Operation - REVISED LOGIC
     // Check if the right operand is a constant literal value (e.g., "5") *not* yet assigned an internal name (rare in your setup)
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty()) {
@@ -1499,7 +1518,7 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){       /
     } else {
         // This is the standard path for variables, temporaries, and constants 
         // already assigned an internal memory location (like [I1]).
-        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; AReg = " + op2Entry.getInternalName() + " * " + operand1);
+        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; AReg = " + lhsCommentName + " * " + operand1);
     }
     
     // E. Temporary Cleanup
