@@ -673,7 +673,7 @@ void Compiler::expresses(){    // handles REL_OP, stage 1, prod 10 (comparison e
         // ---------------------------------------------------------------
         std::string resultName = getTemp();
         // Save the boolean result (0 or -1) from EAX into the new temporary's memory
-        emit("", "mov", "[" + symbolTable.at(resultName).getInternalName() + "], eax", "; Save boolean result to " + resultName);
+        emit("", "mov", "[" + symbolTable.at(resultName).getInternalName() + "],eax", "; Save boolean result to " + resultName);
         
         // Update AReg tracking and push the result
         contentsOfAReg = resultName;
@@ -704,7 +704,7 @@ void Compiler::terms(){    // stage 1, prod 12: Handles ADD_LEVEL_OP (+, -, or)
         // ---------------------------------------------------------------
         if (contentsOfAReg != left) {
             // Load the value of the LHS operand from memory into EAX
-            emit("", "mov", "eax, [" + symbolTable.at(left).getInternalName() + "]", "; Load LHS (" + left + ") into EAX");
+            emit("", "mov", "eax,[" + symbolTable.at(left).getInternalName() + "]", "; AReg = " + left);
             contentsOfAReg = left;
         }
             
@@ -1016,7 +1016,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "+") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitAdditionCode(operand1, operand2);
     }
@@ -1024,7 +1024,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "-") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitSubtractionCode(operand1, operand2);
     }
@@ -1032,7 +1032,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "*") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitMultiplicationCode(operand1, operand2);
     }
@@ -1040,7 +1040,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "div" || op == "/") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitDivisionCode(operand1, operand2);
     }
@@ -1048,7 +1048,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "mod" || op == "%") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitModuloCode(operand1, operand2);
     }
@@ -1056,7 +1056,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "and" || op == "&&") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitAndCode(operand1, operand2);
     }
@@ -1064,7 +1064,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "or" || op == "||") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitOrCode(operand1, operand2);
     }
@@ -1072,7 +1072,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "==") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitEqualityCode(operand1, operand2);
     }
@@ -1080,7 +1080,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "!=") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitInequalityCode(operand1, operand2);
     }
@@ -1088,7 +1088,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "<") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitLessThanCode(operand1, operand2);
     }
@@ -1096,7 +1096,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == "<=") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitLessThanOrEqualToCode(operand1, operand2);
     }
@@ -1104,7 +1104,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == ">") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitGreaterThanCode(operand1, operand2);
     }
@@ -1112,7 +1112,7 @@ void Compiler::code(string op, string operand1, string operand2) {
     else if (op == ">=") {
         isBinOp = true;
         if (contentsOfAReg != operand2)
-            emit("", "mov", "eax, [" + symbolTable.at(operand2).getInternalName() + "]",
+            emit("", "mov", "eax,[" + symbolTable.at(operand2).getInternalName() + "]",
                  "; load " + operand2 + " into eax");
         emitGreaterThanOrEqualToCode(operand1, operand2);
     }
@@ -1307,7 +1307,7 @@ void Compiler::emitReadCode(string operand, string /*operand2*/){
     emit("", "call", "ReadInt", "; read int; value placed in eax");
 
     // Store eax into the variable's storage (use internal name)
-    emit("", "mov", "[" + entry.getInternalName() + "], eax", "; store eax at " + name);
+    emit("", "mov", "[" + entry.getInternalName() + "],eax", "; store eax at " + name);
 
     // Track that A register (eax) no longer holds a useful named value;
     // but per the spec we set contentsOfAReg to the variable that now contains the value
@@ -1339,7 +1339,7 @@ void Compiler::emitWriteCode(string operand, string /*operand2*/){
     // Load A into eax
     if (contentsOfAReg != name) {
         // Load the value into eax from the symbol's internal storage
-        emit("", "mov", "eax, [" + entry.getInternalName() + "]", "; load " + name + " in eax");    // load name into eax
+        emit("", "mov", "eax,[" + entry.getInternalName() + "]", "; load " + name + " in eax");    // load name into eax
         contentsOfAReg = name;
     }
 
@@ -1385,7 +1385,7 @@ void Compiler::emitAssignCode(string operand1, string operand2){     // op2 = op
     // A. Register Spill Management: Spill temporaries unrelated to the current operation.
     if (!contentsOfAReg.empty() && contentsOfAReg != operand1) {
         if (isTemporary(contentsOfAReg) && symbolTable.count(contentsOfAReg)) {
-            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
+            emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "],eax",
                  "; spill A reg (" + contentsOfAReg + ")");
         }
         contentsOfAReg.clear(); 
@@ -1394,7 +1394,7 @@ void Compiler::emitAssignCode(string operand1, string operand2){     // op2 = op
     const SymbolTableEntry &destEntry = symbolTable.at(operand2); // lhs is "a"
 
     // C. Perform Assignment: EAX -> Destination Memory
-    emit("", "mov", "[" + destEntry.getInternalName() + "], eax", 
+    emit("", "mov", "[" + destEntry.getInternalName() + "],eax", 
          "; " + operand2 + " = AReg"); // **FIXED COMMENT** to match target template
 
     // D. Final State Cleanup and Type Update
@@ -1423,7 +1423,7 @@ void Compiler::emitAdditionCode(string operand1, string operand2){
     if (op1Entry.getMode() == CONSTANT && op1Entry.getInternalName().empty() && isInteger(op1Entry.getValue())) {
         emit("", "add", "eax, " + op1Entry.getInternalName(), "; AReg = " + operand2 + " + " + operand1);
     } else {
-        emit("", "add", "eax, [" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " + " + operand1);
+        emit("", "add", "eax,[" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " + " + operand1);
     }
 
     // 3. Free the RHS temporary
@@ -1449,7 +1449,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1461,7 +1461,7 @@ void Compiler::emitSubtractionCode(string operand1, string operand2){       // o
         emit("", "sub", "eax, " + op1Entry.getInternalName(), "; eax -= " + op1Entry.getValue());
     } else {
         // Must reference memory for SUB
-        emit("", "sub", "eax, [" + op1Entry.getInternalName() + "]", "; eax -= " + operand1); 
+        emit("", "sub", "eax,[" + op1Entry.getInternalName() + "]", "; eax -= " + operand1); 
     }
     
     // E. Temporary Cleanup
@@ -1480,13 +1480,14 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){       /
     if (!contentsOfAReg.empty() && isTemporary(contentsOfAReg) && contentsOfAReg != operand2) {
         // ... (Spill logic remains the same, but it's now conditional) ...
         
-        emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "], eax",
+        emit("", "mov", "[" + symbolTable.at(contentsOfAReg).getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
     // If contentsOfAReg == operand2 (e.g., T0), we skip the spill.
 
     const auto &op1Entry = symbolTable.at(operand1);
+    const auto &op2Entry = symbolTable.at(operand2);
 
     // C. Perform Operation - REVISED LOGIC
     // Check if the right operand is a constant literal value (e.g., "5") *not* yet assigned an internal name (rare in your setup)
@@ -1494,11 +1495,11 @@ void Compiler::emitMultiplicationCode(string operand1, string operand2){       /
         // Use two-operand IMUL with the immediate value if possible.
         // NOTE: Standard IMUL syntax for immediate values often uses 'imul eax, eax, value' 
         //       but let's use the simplest, most compatible syntax for now.
-        emit("", "imul", "eax, " + op1Entry.getInternalName(), "; AReg = " + operand2 + " * " + op1Entry.getValue());
+        emit("", "imul", "eax, " + op1Entry.getInternalName(), "; AReg = " + op2Entry.getInternalName() + " * " + op1Entry.getValue());
     } else {
         // This is the standard path for variables, temporaries, and constants 
         // already assigned an internal memory location (like [I1]).
-        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; AReg = " + operand2 + " * " + operand1);
+        emit("", "imul", "dword [" + op1Entry.getInternalName() + "]", "; AReg = " + op2Entry.getInternalName() + " * " + operand1);
     }
     
     // E. Temporary Cleanup
@@ -1524,7 +1525,7 @@ void Compiler::emitDivisionCode(string operand1, string operand2){       // op2 
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1559,7 +1560,7 @@ void Compiler::emitModuloCode(string operand1, string operand2){        // op2 %
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1608,7 +1609,7 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
                 entry.setInternalName(genInternalName(entry.getDataType()));
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear(); // EAX is now clear
     }
@@ -1616,7 +1617,7 @@ void Compiler::emitNegationCode(string operand1, string /*operand2*/){      // -
     // --- 1. Ensure EAX has the value of the operand ---
     // Fix: The variable name was 'operand' but should be 'operand1'.
     if (contentsOfAReg != operand1) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", 
+        emit("", "mov", "eax,[" + symbolTable.at(operand1).getInternalName() + "]", 
              "; Load " + operand1 + " into EAX for negation");
         contentsOfAReg = operand1; // EAX is now tracked by the operand's name
     }
@@ -1664,7 +1665,7 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/) { // !op1, UNAR
                 entry.setInternalName(genInternalName(entry.getDataType())); // Use genInternalName
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear(); // EAX is now empty/stale
     }
@@ -1674,7 +1675,7 @@ void Compiler::emitNotCode(string operand1, string /*operand2*/) { // !op1, UNAR
     // --- 2. Load Operand1 into EAX (if not already there) ---
     // This is the operand we are about to NOT.
     if (contentsOfAReg != operand1) {
-        emit("", "mov", "eax, [" + symbolTable.at(operand1).getInternalName() + "]", 
+        emit("", "mov", "eax,[" + symbolTable.at(operand1).getInternalName() + "]", 
              "; Load " + operand1 + " into EAX for NOT");
         contentsOfAReg = operand1; // EAX now holds operand1's value
     }
@@ -1738,7 +1739,7 @@ void Compiler::emitAndCode(string operand1, string operand2){            // op2 
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1748,7 +1749,7 @@ void Compiler::emitAndCode(string operand1, string operand2){            // op2 
     if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
         emit("", "and", "eax, " + op1Entry.getInternalName(), "; eax &= " + op1Entry.getValue());
     } else {
-        emit("", "and", "eax, [" + op1Entry.getInternalName() + "]",
+        emit("", "and", "eax,[" + op1Entry.getInternalName() + "]",
              "; eax &= " + operand1);
     }
 
@@ -1772,7 +1773,7 @@ void Compiler::emitOrCode(string operand1, string operand2){             // op2 
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1782,7 +1783,7 @@ void Compiler::emitOrCode(string operand1, string operand2){             // op2 
     if (op1Entry.getMode() == CONSTANT && isInteger(op1Entry.getValue())) {
         emit("", "or", "eax, " + op1Entry.getInternalName(), "; eax |= " + op1Entry.getValue());
     } else {
-        emit("", "or", "eax, [" + op1Entry.getInternalName() + "]",
+        emit("", "or", "eax,[" + op1Entry.getInternalName() + "]",
              "; eax |= " + operand1);
     }
 
@@ -1813,7 +1814,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1825,7 +1826,7 @@ void Compiler::emitEqualityCode(string operand1, string operand2){       // op2 
     if (srcEntry.getMode() == CONSTANT && isInteger(srcEntry.getValue())) {
         emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
-        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
+        emit("", "cmp", "eax,[" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     // --- Generate Boolean Result in EAX ---
@@ -1861,7 +1862,7 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1875,7 +1876,7 @@ void Compiler::emitInequalityCode(string operand1, string operand2){    // op2 !
         emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference for non-immediate values
-        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
+        emit("", "cmp", "eax,[" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
@@ -1917,7 +1918,7 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1928,7 +1929,7 @@ void Compiler::emitLessThanCode(string operand1, string operand2){      // op2 <
         emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference for non-immediate values
-        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
+        emit("", "cmp", "eax,[" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
@@ -1970,7 +1971,7 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -1980,7 +1981,7 @@ void Compiler::emitLessThanOrEqualToCode(string operand1, string operand2){     
         emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference
-        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
+        emit("", "cmp", "eax,[" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
@@ -2022,7 +2023,7 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -2032,7 +2033,7 @@ void Compiler::emitGreaterThanCode(string operand1, string operand2){           
         emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference
-        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
+        emit("", "cmp", "eax,[" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
@@ -2075,7 +2076,7 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
                 entry.setInternalName(contentsOfAReg);
             }
         }
-        emit("", "mov", "[" + entry.getInternalName() + "], eax",
+        emit("", "mov", "[" + entry.getInternalName() + "],eax",
              "; spill A reg (" + contentsOfAReg + ")");
         contentsOfAReg.clear();
     }
@@ -2085,7 +2086,7 @@ void Compiler::emitGreaterThanOrEqualToCode(string operand1, string operand2){  
         emit("", "cmp", "eax, " + srcEntry.getInternalName(), "; compare with " + srcEntry.getValue());
     } else {
         // Use memory reference
-        emit("", "cmp", "eax, [" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
+        emit("", "cmp", "eax,[" + srcEntry.getInternalName() + "]", "; compare with " + operand1);
     }
 
     string Ltrue = getLabel();
