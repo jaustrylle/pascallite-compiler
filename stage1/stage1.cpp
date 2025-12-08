@@ -800,7 +800,7 @@ void Compiler::factors() {
         // ---------------------------------------------------------------
         if (op == "*") {
             // The emitter must load the RHS if it's not a constant and then perform imul
-            emitMultiplicationCode(right, left); 
+            emitMultiplicationCode(left, right); 
         } else if (op == "div") {
             emitDivisionCode(right, left);  
         } else if (op == "mod") {
@@ -813,7 +813,7 @@ void Compiler::factors() {
         // ---------------------------------------------------------------
         // 3. RESULT MANAGEMENT (Temporary Generation for New Result)
         // ---------------------------------------------------------------
-        std::string resultName = left;
+        std::string resultName = right;
         
         // 4. CLEANUP AND CONTINUE
         // We only free the RHS temporary here if it hasn't been freed by the emitter (less common).
